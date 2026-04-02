@@ -9,12 +9,12 @@ import {
 // 🔥 Firebase設定 — SETUP.md を読んでここを書き換えてください
 // ═══════════════════════════════════════════════════════════════════
 const firebaseConfig = {
-  apiKey:            "YOUR_API_KEY",
-  authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId:         "YOUR_PROJECT_ID",
-  storageBucket:     "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId:             "YOUR_APP_ID",
+  apiKey:            "AIzaSyC8_PLU-ULrueIVbmXL67Z1egkP0STKbec",
+  authDomain:        "sku-tool-558af.firebaseapp.com",
+  projectId:         "sku-tool-558af",
+  storageBucket:     "sku-tool-558af.firebasestorage.app",
+  messagingSenderId: "240546265244",
+  appId:             "1:240546265244:web:141424d177069477d89559",
 };
 
 const IS_CONFIGURED = !firebaseConfig.apiKey.includes("YOUR");
