@@ -9,12 +9,12 @@ import {
 // 🔥 Firebase設定 — SETUP.md を読んでここを書き換えてください
 // ═══════════════════════════════════════════════════════════════════
 const firebaseConfig = {
-  apiKey: "AIzaSyC8_PLU-ULrueIVbmXL67Z1egkP0STKbec",
-  authDomain: "sku-tool-558af.firebaseapp.com",
-  projectId: "sku-tool-558af",
-  storageBucket: "sku-tool-558af.firebasestorage.app",
-  messagingSenderId: "240546265244",
-  appId: "1:240546265244:web:141424d177069477d89559",
+  apiKey:            "YOUR_API_KEY",
+  authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId:         "YOUR_PROJECT_ID",
+  storageBucket:     "YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId:             "YOUR_APP_ID",
 };
 
 const IS_CONFIGURED = !firebaseConfig.apiKey.includes("YOUR");
@@ -232,9 +232,9 @@ function LoginScreen({ members, onLogin }) {
   const [pw,  setPw]  =useState("");
   const [err, setErr] =useState("");
   function doLogin() {
-    const u=members.find(m=>m.name===name&&m.password===pw);
-    if (!name){setErr("名前を選んでください");return;}
-    if (!u){setErr("パスワードが違います");return;}
+    const u=members.find(m=>m.name===name.trim()&&m.password===pw);
+    if (!name.trim()){setErr("ユーザー名を入力してください");return;}
+    if (!u){setErr("ユーザー名またはパスワードが違います");return;}
     onLogin(u);
   }
   return (
@@ -252,11 +252,8 @@ function LoginScreen({ members, onLogin }) {
           </div>
         </div>
         <div style={{marginBottom:14}}>
-          <label style={labelS}>名前</label>
-          <select value={name} onChange={e=>{setName(e.target.value);setErr("");}} style={inputS}>
-            <option value="">選択してください</option>
-            {members.map(m=><option key={m.id} value={m.name}>{m.name}{m.role==="master"?" 👑":""}</option>)}
-          </select>
+          <label style={labelS}>ユーザー名</label>
+          <input value={name} onChange={e=>{setName(e.target.value);setErr("");}} onKeyDown={e=>e.key==="Enter"&&doLogin()} style={inputS} placeholder="ユーザー名を入力"/>
         </div>
         <div style={{marginBottom:16}}>
           <label style={labelS}>パスワード</label>
