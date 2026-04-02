@@ -35,6 +35,25 @@ function tsToStr(ts) {
   return String(ts);
 }
 
+
+// ═══════════════════════════════════════════════════════════════════
+// EXCEL EXPORT (CSV形式 - Excelで開ける)
+// ═══════════════════════════════════════════════════════════════════
+function exportToExcel(rows, filename) {
+  const headers = ["ラベル","商品名","年月日時","個数","ジャンル","メンバー名","金額(円)","読込日時"];
+  const csvRows = [headers, ...rows.map(r => [
+    r.label||"", r.productName||"", r.datetime||"", r.quantity||"",
+    r.genre||"", r.memberName||"", r.amount||"", r.readAt||""
+  ])];
+  const bom = "\uFEFF";
+  const csv = bom + csvRows.map(row => row.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(",")).join("\n");
+  const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // DESIGN TOKENS
 // ═══════════════════════════════════════════════════════════════════
@@ -192,7 +211,7 @@ export default function App() {
       <header style={{background:`${C.surface}f0`,backdropFilter:"blur(12px)",borderBottom:`1px solid ${C.border}`,padding:"0 16px",height:54,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:50}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{display:"flex",gap:2,background:C.surface2,borderRadius:10,padding:3,border:`1px solid ${C.border}`}}>
-            {[{id:"inventory",icon:"🗃",label:"在庫管理"},{id:"qr",icon:"📷",label:"QR発送"}].map(m=>(
+            {[{id:"inventory",icon:"🗃",label:"在庫管理"},{id:"qr",icon:"📷",label:"QR発送"},{id:"sales",icon:"💰",label:"売上"}].map(m=>(
               <button key={m.id} onClick={()=>setAppMode(m.id)} style={{padding:"5px 12px",borderRadius:7,border:"none",background:appMode===m.id?C.accent:"transparent",color:appMode===m.id?"#fff":C.muted,fontSize:12,fontWeight:appMode===m.id?700:400,display:"flex",alignItems:"center",gap:5,transition:"all 0.15s"}}>
                 <span>{m.icon}</span><span>{m.label}</span>
               </button>
@@ -215,10 +234,9 @@ export default function App() {
       {appMode==="inventory"&&<LowStockBanner items={invItems}/>}
 
       <main style={{maxWidth:860,margin:"0 auto",padding:16}}>
-        {appMode==="inventory"
-          ?<InventoryApp items={invItems} history={invHist} members={members} user={user} isMaster={isMaster} showToast={showToast} addNotice={addNotice}/>
-          :<QRApp qrItems={qrItems} qrLog={qrLog} members={members} user={user} isMaster={isMaster} showToast={showToast} addNotice={addNotice}/>
-        }
+        {appMode==="inventory"&&<InventoryApp items={invItems} history={invHist} members={members} user={user} isMaster={isMaster} showToast={showToast} addNotice={addNotice}/>}
+        {appMode==="qr"&&<QRApp qrItems={qrItems} qrLog={qrLog} members={members} user={user} isMaster={isMaster} showToast={showToast} addNotice={addNotice}/>}
+        {appMode==="sales"&&<SalesApp qrItems={qrItems} members={members} user={user} isMaster={isMaster}/>}
       </main>
     </div>
   );
@@ -331,6 +349,8 @@ function InventoryApp({ items, history, members, user, isMaster, showToast, addN
   const [page,   setPage]   = useState("home");
   const [selItem,setSelItem]= useState(null);
   const [modal,  setModal]  = useState(null);
+  // メンバーには公開設定された商品のみ表示
+  const visibleItems = isMaster ? items : items.filter(i => !i.visibleTo || i.visibleTo.length===0 || i.visibleTo.includes(user.name));
 
   const changeQty = useCallback(async (item, delta) => {
     const newQty = Math.max(0, item.qty+delta);
@@ -354,9 +374,9 @@ function InventoryApp({ items, history, members, user, isMaster, showToast, addN
         ))}
       </nav>
 
-      {modal&&<InvModal modal={modal} setModal={setModal} items={items} showToast={showToast}/>}
+      {modal&&<InvModal modal={modal} setModal={setModal} items={items} showToast={showToast} members={members}/>}
 
-      {page==="home"&&!selItem&&<InvHome items={items} isMaster={isMaster} onSelect={it=>{setSelItem(it);setPage("detail");}} onAdd={()=>setModal({type:"addItem"})} changeQty={changeQty}/>}
+      {page==="home"&&!selItem&&<InvHome items={visibleItems} isMaster={isMaster} onSelect={it=>{setSelItem(it);setPage("detail");}} onAdd={()=>setModal({type:"addItem"})} changeQty={changeQty}/>}
       {page==="detail"&&selItem&&<InvDetail item={items.find(i=>i.id===selItem.id)||selItem} isMaster={isMaster} changeQty={changeQty} history={history.filter(h=>h.itemId===selItem.id)} onBack={()=>{setPage("home");setSelItem(null);}} onEdit={()=>setModal({type:"editItem",item:items.find(i=>i.id===selItem.id)||selItem})} onDelete={async()=>{await deleteDoc(doc(db,"inv_items",selItem.id));setPage("home");setSelItem(null);showToast("削除しました",C.red);}}/>}
       {page==="history"&&<InvHistory history={history} isMaster={isMaster} user={user} showToast={showToast}/>}
       {page==="members"&&isMaster&&<InvMembers members={members} showToast={showToast} onAdd={()=>setModal({type:"addUser"})}/>}
@@ -545,14 +565,14 @@ function InvMembers({ members, showToast, onAdd }) {
   );
 }
 
-function InvModal({ modal, setModal, items, showToast }) {
+function InvModal({ modal, setModal, items, showToast, members }) {
   const close=()=>setModal(null);
-  if (modal.type==="addItem"||modal.type==="editItem") return <InvItemForm close={close} existing={modal.item} items={items} showToast={showToast}/>;
+  if (modal.type==="addItem"||modal.type==="editItem") return <InvItemForm close={close} existing={modal.item} items={items} showToast={showToast} members={members}/>;
   if (modal.type==="addUser") return <InvAddUser close={close} showToast={showToast}/>;
   return null;
 }
 
-function InvItemForm({ close, existing, items, showToast }) {
+function InvItemForm({ close, existing, items, showToast, members=[] }) {
   const isEdit=!!existing;
   const existingCats=[...new Set(items.map(i=>i.category).filter(Boolean))].sort();
   const initUnit=existing?.unit||"個";
@@ -561,12 +581,13 @@ function InvItemForm({ close, existing, items, showToast }) {
   const [customUnit,setCustomUnit]=useState(isPreset?"":initUnit);
   const [catInput,setCatInput]=useState(existing?.category||"");
   const [showCats,setShowCats]=useState(false);
+  const [visibleTo,setVisibleTo]=useState(existing?.visibleTo||[]);
   const fileRef=useRef();
   const filteredCats=existingCats.filter(c=>c.toLowerCase().includes(catInput.toLowerCase())&&c!==catInput);
   const finalUnit=customUnit||form.unit;
   async function save() {
     if (!form.name.trim()){showToast("商品名を入力してください",C.red);return;}
-    const payload={...form,unit:finalUnit,category:catInput.trim()||"未分類",qty:Number(form.qty),minAlert:Number(form.minAlert),price:Number(form.price)};
+    const payload={...form,unit:finalUnit,category:catInput.trim()||"未分類",qty:Number(form.qty),minAlert:Number(form.minAlert),price:Number(form.price),visibleTo};
     if (isEdit){await updateDoc(doc(db,"inv_items",existing.id),payload);showToast("更新しました");}
     else{await addDoc(collection(db,"inv_items"),{...payload,createdAt:serverTimestamp()});showToast("追加しました");}
     close();
@@ -599,6 +620,18 @@ function InvItemForm({ close, existing, items, showToast }) {
         <div style={{gridColumn:"1/-1"}}><Fg label="単価 (円)"><input type="number" value={form.price} onChange={e=>setForm(p=>({...p,price:e.target.value}))} style={inputS}/></Fg></div>
       </div>
       <Fg label="メモ"><input value={form.note} onChange={e=>setForm(p=>({...p,note:e.target.value}))} style={inputS} placeholder="任意"/></Fg>
+      <div style={{marginBottom:12}}>
+        <label style={labelS}>公開するメンバー（未選択 = 全員に公開）</label>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:4}}>
+          {members.filter(m=>m.role==="member").map(m=>(
+            <button key={m.id} type="button" onClick={()=>setVisibleTo(p=>p.includes(m.name)?p.filter(n=>n!==m.name):[...p,m.name])}
+              style={{padding:"4px 12px",fontSize:12,border:`1px solid ${visibleTo.includes(m.name)?C.accent:C.border}`,borderRadius:20,background:visibleTo.includes(m.name)?C.accentDim:C.surface2,color:visibleTo.includes(m.name)?C.accent:C.muted,cursor:"pointer"}}>
+              {visibleTo.includes(m.name)?"✓ ":""}{m.name}
+            </button>
+          ))}
+        </div>
+        {visibleTo.length===0&&<p style={{fontSize:11,color:C.muted,marginTop:4}}>全メンバーに公開されます</p>}
+      </div>
       <div style={{display:"flex",gap:10,marginTop:16}}>
         <button onClick={close} style={{flex:1,padding:"11px",background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,fontSize:14,color:C.muted}}>キャンセル</button>
         <button onClick={save} style={{flex:2,padding:"11px",background:C.accent,color:"#fff",border:"none",borderRadius:10,fontWeight:700,fontSize:14}}>{isEdit?"更新する":"追加する"}</button>
@@ -653,10 +686,22 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice }
     setSelected({...item,lockedBy:user.name});
   }
   async function handleSave(formData) {
+    const readAt = new Date().toLocaleString("ja-JP",{hour12:false});
     await updateDoc(doc(db,"qr_items",selectedItem.id),{status:"read",lockedBy:null,formData,readAt:serverTimestamp()});
     await addDoc(collection(db,"qr_log"),{userName:user.name,action:"保存",detail:`保存: ${selectedItem.label} / ${formData.productName}`,createdAt:serverTimestamp()});
     await addNotice("qr_save",`${user.name} が「${selectedItem.label}」を読み込み完了しました`,"master");
-    showToast("保存しました ✅",C.green);
+    // 自動Excelエクスポート
+    exportToExcel([{
+      label:selectedItem.label,
+      productName:formData.productName,
+      datetime:formData.datetime,
+      quantity:formData.quantity,
+      genre:formData.genre,
+      memberName:formData.memberName,
+      amount:formData.amount,
+      readAt
+    }], `QR_${formData.memberName}_${readAt.replace(/[/:]/g,"-")}.csv`);
+    showToast("保存＆Excelダウンロード完了 ✅",C.green);
     setSelected(null);
     setTab(isMaster?"read":"myread");
   }
@@ -873,6 +918,136 @@ function QRFormView({ item, user, onSave, onCancel }) {
           💾 保存して完了
         </button>
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 💰 SALES APP
+// ═══════════════════════════════════════════════════════════════════
+function SalesApp({ qrItems, members, user, isMaster }) {
+  const [period, setPeriod] = useState("all");
+  const [selMember, setSelMember] = useState("all");
+  const readItems = qrItems.filter(i => i.status==="read" && i.formData);
+
+  function filterByPeriod(items) {
+    if (period==="all") return items;
+    const now = new Date();
+    return items.filter(i => {
+      const d = i.readAt?.toDate ? i.readAt.toDate() : new Date(i.readAt||0);
+      if (period==="today") return d.toDateString()===now.toDateString();
+      if (period==="month") return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();
+      return true;
+    });
+  }
+
+  const filtered = filterByPeriod(readItems).filter(i =>
+    selMember==="all" || i.formData?.memberName===selMember
+  );
+
+  // メンバーは自分のデータのみ
+  const displayItems = isMaster ? filtered : filtered.filter(i => i.formData?.memberName===user.name);
+
+  const memberNames = [...new Set(readItems.map(i=>i.formData?.memberName).filter(Boolean))];
+
+  // メンバー別集計
+  const memberStats = memberNames.map(name => {
+    const items = filterByPeriod(readItems).filter(i=>i.formData?.memberName===name);
+    const total = items.reduce((s,i)=>s+Number(i.formData?.amount||0),0);
+    return {name, count:items.length, total};
+  }).sort((a,b)=>b.total-a.total);
+
+  const grandTotal = displayItems.reduce((s,i)=>s+Number(i.formData?.amount||0),0);
+
+  function exportAll() {
+    exportToExcel(displayItems.map(i=>({
+      label:i.label,
+      productName:i.formData.productName,
+      datetime:i.formData.datetime,
+      quantity:i.formData.quantity,
+      genre:i.formData.genre,
+      memberName:i.formData.memberName,
+      amount:i.formData.amount,
+      readAt:tsToStr(i.readAt)
+    })), `売上データ_${new Date().toLocaleDateString("ja-JP").replace(/\//g,"-")}.csv`);
+  }
+
+  return (
+    <div style={{animation:"fadeUp 0.3s ease"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+        <h2 style={{fontSize:16,fontWeight:700}}>💰 売上集計</h2>
+        <button onClick={exportAll} style={{padding:"8px 16px",background:C.green,color:"#fff",border:"none",borderRadius:10,fontSize:13,fontWeight:700}}>📥 Excelダウンロード</button>
+      </div>
+
+      {/* フィルター */}
+      <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:2,background:C.surface,borderRadius:10,padding:3,border:`1px solid ${C.border}`}}>
+          {[{id:"all",label:"全期間"},{id:"month",label:"今月"},{id:"today",label:"今日"}].map(p=>(
+            <button key={p.id} onClick={()=>setPeriod(p.id)} style={{padding:"5px 12px",borderRadius:7,border:"none",background:period===p.id?C.accent:"transparent",color:period===p.id?"#fff":C.muted,fontSize:12,fontWeight:period===p.id?700:400}}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+        {isMaster&&<select value={selMember} onChange={e=>setSelMember(e.target.value)} style={{...inputS,width:"auto"}}>
+          <option value="all">全メンバー</option>
+          {memberNames.map(n=><option key={n} value={n}>{n}</option>)}
+        </select>}
+      </div>
+
+      {/* 合計カード */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+        <div style={{background:C.surface,borderRadius:14,padding:16,border:`1px solid ${C.greenBorder}`}}>
+          <p style={{fontSize:11,color:C.muted,marginBottom:4}}>合計金額</p>
+          <p style={{fontSize:28,fontWeight:700,color:C.green,fontFamily:"'Sora',sans-serif"}}>¥{grandTotal.toLocaleString()}</p>
+        </div>
+        <div style={{background:C.surface,borderRadius:14,padding:16,border:`1px solid ${C.border}`}}>
+          <p style={{fontSize:11,color:C.muted,marginBottom:4}}>件数</p>
+          <p style={{fontSize:28,fontWeight:700,fontFamily:"'Sora',sans-serif"}}>{displayItems.length}<span style={{fontSize:14,color:C.muted,fontWeight:400}}> 件</span></p>
+        </div>
+      </div>
+
+      {/* メンバー別集計（マスターのみ） */}
+      {isMaster&&selMember==="all"&&memberStats.length>0&&(
+        <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:16,marginBottom:16}}>
+          <h3 style={{fontSize:14,fontWeight:700,marginBottom:12,color:C.muted}}>メンバー別売上</h3>
+          {memberStats.map((m,i)=>(
+            <div key={m.name} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<memberStats.length-1?`1px solid ${C.border}`:"none"}}>
+              <span style={{fontSize:12,color:C.muted,minWidth:20}}>{i+1}</span>
+              <span style={{flex:1,fontSize:14,fontWeight:600}}>{m.name}</span>
+              <span style={{fontSize:12,color:C.muted}}>{m.count}件</span>
+              <span style={{fontSize:15,fontWeight:700,color:C.green}}>¥{m.total.toLocaleString()}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 明細一覧 */}
+      <h3 style={{fontSize:14,fontWeight:700,marginBottom:10,color:C.muted}}>明細一覧</h3>
+      {displayItems.length===0
+        ?<div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:40,textAlign:"center"}}><p style={{color:C.muted}}>データがありません</p></div>
+        :<div style={{background:C.surface,borderRadius:12,border:`1px solid ${C.border}`,overflow:"hidden"}}><div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead><tr style={{background:C.surface2}}>
+              {["読込日時","ラベル","商品名","個数","ジャンル",...(isMaster?["メンバー"]:[]),"金額"].map((h,i)=>(
+                <th key={i} style={{padding:"9px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:C.muted,whiteSpace:"nowrap"}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {displayItems.map((item,i)=>(
+                <tr key={item.id} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?C.surface:`${C.surface2}80`}}>
+                  <td style={{padding:"9px 12px",color:C.muted,fontSize:10,whiteSpace:"nowrap"}}>{tsToStr(item.readAt)}</td>
+                  <td style={{padding:"9px 12px",fontWeight:600,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.label}</td>
+                  <td style={{padding:"9px 12px",maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.formData?.productName}</td>
+                  <td style={{padding:"9px 12px"}}>{item.formData?.quantity}</td>
+                  <td style={{padding:"9px 12px",color:C.muted}}>{item.formData?.genre}</td>
+                  {isMaster&&<td style={{padding:"9px 12px",color:C.accent,fontWeight:600}}>{item.formData?.memberName}</td>}
+                  <td style={{padding:"9px 12px",fontWeight:700,color:C.green,whiteSpace:"nowrap"}}>¥{Number(item.formData?.amount||0).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div></div>
+      }
     </div>
   );
 }
