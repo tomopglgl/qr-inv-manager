@@ -66,6 +66,26 @@ function exportToExcel(rows, filename) {
   URL.revokeObjectURL(url);
 }
 
+
+// ═══════════════════════════════════════════════════════════════════
+// IMAGE COMPRESSION - Firestoreの1MB制限対策
+// ═══════════════════════════════════════════════════════════════════
+function compressImage(dataUrl, maxWidth=600, quality=0.7) {
+  return new Promise((resolve) => {
+    const img = new window.Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let w = img.width, h = img.height;
+      if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.src = dataUrl;
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // OCR - Claude AIで画像から番号を読み取る
 // ═══════════════════════════════════════════════════════════════════
@@ -475,18 +495,29 @@ function ShippingQRRegister({ shippingQRs, showToast }) {
     const file = e.target.files[0]; if(!file) return;
     const r = new FileReader();
     r.onload = async ev => {
-      const data = ev.target.result;
-      setPreview(data); setImgData(data);
+      const raw = ev.target.result;
+      setPreview(raw);
       if (!label) setLabel(file.name.replace(/\.[^/.]+$/,""));
-      // OCR実行
-      setOcring(true);
-      const result = await extractShippingNumbers(data);
+      // 画像を圧縮してFirestore制限対策
+      const compressed = await compressImage(raw, 600, 0.7);
+      setImgData(compressed);
+    };
+    r.readAsDataURL(file);
+  }
+
+  async function runOCR() {
+    if (!imgData) return;
+    setOcring(true);
+    try {
+      const result = await extractShippingNumbers(imgData);
       setOcr(result);
       if (result.postConfirmCode) setPostCode(result.postConfirmCode);
       if (result.trackingNumber)  setTrackNum(result.trackingNumber);
-      setOcring(false);
-    };
-    r.readAsDataURL(file);
+      showToast("AI読み取り完了！内容を確認してください", C.green);
+    } catch(e) {
+      showToast("AI読み取りに失敗しました。手動で入力してください", C.orange);
+    }
+    setOcring(false);
   }
 
   async function handleSave() {
@@ -566,21 +597,32 @@ function ShippingQRRegister({ shippingQRs, showToast }) {
         </div>
         <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{display:"none"}}/>
 
+        {/* AI読み取りボタン */}
+        {imgData&&!ocring&&(
+          <button onClick={runOCR} style={{padding:"9px 18px",background:C.accentDim,color:C.accent,border:`1px solid ${C.accentBorder}`,borderRadius:10,fontSize:13,fontWeight:700,marginBottom:14,display:"flex",alignItems:"center",gap:6}}>
+            🤖 AIで番号を自動読み取り（任意）
+          </button>
+        )}
+        {ocring&&(
+          <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",background:C.accentDim,border:`1px solid ${C.accentBorder}`,borderRadius:10,marginBottom:14}}>
+            <div style={{width:16,height:16,border:`2px solid ${C.border}`,borderTopColor:C.accent,borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
+            <span style={{fontSize:13,color:C.accent}}>AI読み取り中...</span>
+          </div>
+        )}
         {ocrResult&&(
           <div style={{background:C.greenDim,border:`1px solid ${C.greenBorder}`,borderRadius:10,padding:"10px 14px",marginBottom:14}}>
-            <p style={{fontSize:12,color:C.green,fontWeight:600,marginBottom:4}}>✅ AI読み取り完了（修正可能）</p>
-            {ocrResult.shippingMethod&&<p style={{fontSize:11,color:C.muted}}>発送方法: {ocrResult.shippingMethod}</p>}
+            <p style={{fontSize:12,color:C.green,fontWeight:600}}>✅ AI読み取り完了（下の入力欄を確認・修正してください）</p>
           </div>
         )}
 
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
           <div>
             <label style={labelS}>ポスト発送確認符号</label>
-            <input value={postCode} onChange={e=>setPostCode(e.target.value)} style={inputS} placeholder="例: UK09UL〜"/>
+            <input value={postCode} onChange={e=>setPostCode(e.target.value)} style={inputS} placeholder="例: UK09UL〜（手動入力可）"/>
           </div>
           <div>
             <label style={labelS}>お問い合わせ番号</label>
-            <input value={trackNum} onChange={e=>setTrackNum(e.target.value)} style={inputS} placeholder="例: UP55PK〜"/>
+            <input value={trackNum} onChange={e=>setTrackNum(e.target.value)} style={inputS} placeholder="例: UP55PK〜（手動入力可）"/>
           </div>
         </div>
 
@@ -798,16 +840,27 @@ function MemberQRUpload({ user, showToast, addNotice, invItems }) {
     const file = e.target.files[0]; if(!file) return;
     const r = new FileReader();
     r.onload = async ev => {
-      const data = ev.target.result;
-      setPreview(data); setImgData(data);
-      setOcring(true);
-      const result = await extractShippingNumbers(data);
+      const raw = ev.target.result;
+      setPreview(raw);
+      const compressed = await compressImage(raw, 600, 0.7);
+      setImgData(compressed);
+    };
+    r.readAsDataURL(file);
+  }
+
+  async function runOCR() {
+    if (!imgData) return;
+    setOcring(true);
+    try {
+      const result = await extractShippingNumbers(imgData);
       setOcr(result);
       if (result.postConfirmCode) setPostCode(result.postConfirmCode);
       if (result.trackingNumber)  setTrackNum(result.trackingNumber);
-      setOcring(false);
-    };
-    r.readAsDataURL(file);
+      showToast("AI読み取り完了！内容を確認してください", C.green);
+    } catch(e) {
+      showToast("AI読み取りに失敗しました。手動で入力してください", C.orange);
+    }
+    setOcring(false);
   }
 
   async function handleSubmit() {
