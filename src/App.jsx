@@ -1,4 +1,4 @@
-// @version 5.6 - 2026-04-05
+// @version 6.0 - 2026-04-05
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -324,7 +324,7 @@ export default function App() {
 
       <main style={{maxWidth:860,margin:"0 auto",padding:16}}>
         {appMode==="inventory"&&<InventoryApp items={invItems} history={invHist} members={members} user={user} isMaster={isMaster} showToast={showToast} addNotice={addNotice}/>}
-        {appMode==="qr"&&<QRApp qrItems={qrItems} qrLog={qrLog} members={members} user={user} isMaster={isMaster} showToast={showToast} addNotice={addNotice} invItems={invItems} invHist={invHist}/>}
+        {appMode==="qr"&&<QRApp qrItems={qrItems} qrLog={qrLog} members={members} user={user} isMaster={isMaster} showToast={showToast} addNotice={addNotice} invItems={invItems} invHist={invHist} soldImageMap={soldImageMap}/>}
         {appMode==="sales"&&<SalesApp qrItems={qrItems} members={members} user={user} isMaster={isMaster}/>}
       </main>
     </div>
@@ -779,7 +779,7 @@ function InvAddUser({ close, showToast }) {
 // ═══════════════════════════════════════════════════════════════════
 // ▌ QR APP
 // ═══════════════════════════════════════════════════════════════════
-function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, invItems=[], invHist=[] }) {
+function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, invItems=[], invHist=[], soldImageMap={} }) {
   const [tab,        setTab]        = useState("unread");
   const [selectedItem,setSelected]  = useState(null);
 
@@ -814,35 +814,22 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
   }
   async function handleSave(formData) {
     const readAt = new Date().toLocaleString("ja-JP",{hour12:false});
-    let savedFormData = {...formData};
-    if (formData.soldImage) {
-      // 段階的に圧縮してFirestoreの1MB制限に収める
-      let compressed = await compressImage(formData.soldImage, 400, 0.5);
-      // base64サイズチェック（おおよそ750KB以下になるよう）
-      while (compressed.length > 750000) {
-        compressed = await compressImage(compressed, 300, 0.4);
-      }
-      savedFormData.soldImage = compressed;
-      console.log("soldImage size:", compressed.length, "bytes");
+    // soldImageを別コレクションに分けて保存（Firestoreの1MB制限回避）
+    const {soldImage, ...formDataWithoutImage} = formData;
+    if (soldImage) {
+      // 圧縮してsold_imagesコレクションに保存（IDはqrItemIdと同じ）
+      const compressed = await compressImage(soldImage, 500, 0.6);
+      await setDoc(doc(db,"sold_images",selectedItem.id), {
+        imageData: compressed,
+        memberName: formData.memberName,
+        createdAt: serverTimestamp()
+      });
     }
-    // QRのimageDataと合計サイズをチェック
-    const totalSize = (selectedItem.imageData||"").length + (savedFormData.soldImage||"").length;
-    console.log("Total doc size estimate:", totalSize, "bytes");
-    if (totalSize > 900000) {
-      // サイズ超過の場合はsoldImageをさらに圧縮
-      if (savedFormData.soldImage) {
-        savedFormData.soldImage = await compressImage(savedFormData.soldImage, 200, 0.3);
-      }
-    }
-    try {
-      await updateDoc(doc(db,"qr_items",selectedItem.id),{status:"read",lockedBy:null,formData:savedFormData,readAt:serverTimestamp()});
-    } catch(e) {
-      console.error("Firestore save error:", e);
-      // soldImageなしで再試行
-      const {soldImage, ...formDataWithoutImage} = savedFormData;
-      await updateDoc(doc(db,"qr_items",selectedItem.id),{status:"read",lockedBy:null,formData:formDataWithoutImage,readAt:serverTimestamp()});
-      showToast("画像サイズが大きすぎたため画像なしで保存しました",C.orange);
-    }
+    await updateDoc(doc(db,"qr_items",selectedItem.id),{
+      status:"read", lockedBy:null,
+      formData: formDataWithoutImage,
+      readAt: serverTimestamp()
+    });
     await addDoc(collection(db,"qr_log"),{userName:user.name,action:"保存",detail:`保存: ${selectedItem.label} / ${formData.productName}`,createdAt:serverTimestamp()});
     await addNotice("qr_save",`${user.name} が「${selectedItem.label}」を読み込み完了しました`,"master");
     // 自動Excelエクスポート
@@ -920,10 +907,10 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
 
       {tab==="upload"&&<QRUploader qrItems={qrItems} user={user} showToast={showToast} isMaster={isMaster} members={members}/>}
       {tab==="unread"&&<QRList items={unreadItems} user={user} isMaster={isMaster} onSelect={handleSelect} onDelete={handleDelete} onRelease={handleRelease} members={members}/>}
-      {tab==="read"&&isMaster&&<QRList items={allReadItems} user={user} isMaster={isMaster} readOnly onDelete={handleDelete} onRelease={handleRelease} members={members} onShip={handleShip}/>}
-      {tab==="shipped"&&isMaster&&<ShippedList items={shippedItems}/>}
-      {tab==="myread"&&!isMaster&&<QRReadList items={myReadItems}/>}
-      {tab==="myshipped"&&!isMaster&&<ShippedList items={myShippedItems}/>}
+      {tab==="read"&&isMaster&&<QRList items={allReadItems} user={user} isMaster={isMaster} readOnly onDelete={handleDelete} onRelease={handleRelease} members={members} onShip={handleShip} soldImageMap={soldImageMap}/>}
+      {tab==="shipped"&&isMaster&&<ShippedList items={shippedItems} soldImageMap={soldImageMap}/>}
+      {tab==="myread"&&!isMaster&&<QRReadList items={myReadItems} soldImageMap={soldImageMap}/>}
+      {tab==="myshipped"&&!isMaster&&<ShippedList items={myShippedItems} soldImageMap={soldImageMap}/>}
       {tab==="log"&&isMaster&&(
         <div>
           <h3 style={{fontSize:15,fontWeight:700,marginBottom:12}}>操作ログ</h3>
@@ -1091,7 +1078,7 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[] }) {
   );
 }
 
-function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly=false, members=[], onShip=null }) {
+function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly=false, members=[], onShip=null, soldImageMap={} }) {
   const [filterCat,    setFilterCat]    = useState("すべて");
   const [filterMember, setFilterMember] = useState("すべて");
   const cats = ["すべて",...new Set(items.map(i=>i.category).filter(Boolean))].sort();
@@ -1188,6 +1175,11 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
                 {isLockedByOther&&<p style={{fontSize:11,color:C.red,marginTop:2}}>🔒 {item.lockedBy} が使用中</p>}
                 {isLockedByMe&&<p style={{fontSize:11,color:C.orange,marginTop:2}}>✏️ あなたが選択中</p>}
                 {item.status==="read"&&item.formData?.memberName&&<p style={{fontSize:11,color:C.green,marginTop:2}}>✅ {item.formData.memberName} が読み込み済</p>}
+              {item.status==="read"&&soldImageMap[item.id]&&(
+                <div style={{marginTop:6}}>
+                  <ZoomableImage src={soldImageMap[item.id]} style={{maxHeight:60,maxWidth:120,borderRadius:6,objectFit:"contain",background:C.surface2}} label="売れた商品"/>
+                </div>
+              )}
                 {item.registeredBy&&isMaster&&item.registeredRole!=="master"&&<p style={{fontSize:10,color:C.faint,marginTop:1}}>登録: {item.registeredBy}</p>}
                 {isMaster&&item.assignedTo&&<p style={{fontSize:10,color:C.green,marginTop:1}}>👤 {item.assignedTo} 専用</p>}
               </div>
@@ -1240,7 +1232,7 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
   );
 }
 
-function ShippedList({ items }) {
+function ShippedList({ items, soldImageMap={} }) {
   if (!items.length) return (
     <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:40,textAlign:"center"}}>
       <p style={{color:C.muted}}>発送完了のQRコードはありません</p>
@@ -1262,12 +1254,12 @@ function ShippedList({ items }) {
             </div>
           </div>
 
-          {/* 売れた商品画像（タップで拡大） */}
-          {item.formData?.soldImage&&(
+          {/* 売れた商品画像（sold_imagesコレクションから） */}
+          {soldImageMap[item.id]&&(
             <div style={{marginBottom:12}}>
               <p style={{fontSize:10,color:C.muted,marginBottom:4}}>売れた商品の画像（タップで拡大）</p>
               <ZoomableImage
-                src={item.formData.soldImage}
+                src={soldImageMap[item.id]}
                 style={{maxWidth:"100%",maxHeight:140,borderRadius:8,objectFit:"contain",background:C.surface2,display:"block"}}
                 label="売れた商品"
               />
@@ -1319,7 +1311,7 @@ function ShippedList({ items }) {
 }
 
 
-function QRReadList({ items }) {
+function QRReadList({ items, soldImageMap={} }) {
   if (!items.length) return (
     <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:40,textAlign:"center"}}>
       <p style={{color:C.muted}}>まだ読み込み済みはありません</p>
@@ -1337,12 +1329,12 @@ function QRReadList({ items }) {
               <p style={{fontSize:11,color:C.green,fontWeight:600}}>✅ 読み込み済: {tsToStr(item.readAt)}</p>
             </div>
           </div>
-          {/* 売れた商品画像 */}
-          {item.formData?.soldImage&&(
+          {/* 売れた商品画像（sold_imagesコレクションから） */}
+          {soldImageMap[item.id]&&(
             <div style={{marginBottom:10}}>
               <p style={{fontSize:10,color:C.muted,marginBottom:4}}>売れた商品の画像（タップで拡大）</p>
               <ZoomableImage
-                src={item.formData.soldImage}
+                src={soldImageMap[item.id]}
                 style={{maxWidth:"100%",maxHeight:140,borderRadius:8,objectFit:"contain",background:C.surface2,display:"block"}}
                 label="売れた商品"
               />
