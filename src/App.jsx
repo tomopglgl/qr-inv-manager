@@ -1,4 +1,4 @@
-// @version 5.1 - 2026-04-05
+// @version 5.2 - 2026-04-05
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -810,7 +810,13 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
     {id:"shipped",label:"発送完了",  cnt:shippedItems.length},
     {id:"log",    label:"操作ログ",  cnt:null},
   ];
-  const memberTabs=[{id:"upload",label:"QR登録",cnt:null},{id:"unread",label:"未読み込み",cnt:unreadItems.length},{id:"myread",label:"自分の読込済",cnt:myReadItems.length}];
+  const myShippedItems = visibleQRs.filter(i=>i.status==="shipped"&&i.formData?.memberName===user.name);
+  const memberTabs=[
+    {id:"upload",   label:"QR登録",    cnt:null},
+    {id:"unread",   label:"未読み込み", cnt:unreadItems.length},
+    {id:"myread",   label:"読み込み済", cnt:myReadItems.length},
+    {id:"myshipped",label:"発送完了",   cnt:myShippedItems.length},
+  ];
   const tabs=isMaster?masterTabs:memberTabs;
 
   return (
@@ -829,6 +835,7 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
       {tab==="read"&&isMaster&&<QRList items={allReadItems} user={user} isMaster={isMaster} readOnly onDelete={handleDelete} onRelease={handleRelease} members={members} onShip={handleShip}/>}
       {tab==="shipped"&&isMaster&&<ShippedList items={shippedItems}/>}
       {tab==="myread"&&!isMaster&&<QRReadList items={myReadItems}/>}
+      {tab==="myshipped"&&!isMaster&&<ShippedList items={myShippedItems}/>}
       {tab==="log"&&isMaster&&(
         <div>
           <h3 style={{fontSize:15,fontWeight:700,marginBottom:12}}>操作ログ</h3>
