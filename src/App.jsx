@@ -1,4 +1,4 @@
-// @version 5.3 - 2026-04-05
+// @version 5.4 - 2026-04-05
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -79,6 +79,47 @@ function ShippingBadge({ methodId, size="sm" }) {
     <span style={{fontSize:11,padding:"2px 10px",borderRadius:20,fontWeight:700,background:m.color+"20",color:m.color,border:"1px solid "+m.color+"50",display:"inline-flex",alignItems:"center",gap:4}}>
       <span>{m.icon}</span>{m.name}
     </span>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// 画像拡大モーダル（共通）
+// ═══════════════════════════════════════════════════════════════════
+function ImageZoom({ src, onClose, title="" }) {
+  if (!src) return null;
+  return (
+    <div
+      onClick={onClose}
+      style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.97)",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:12}}
+    >
+      <div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",alignItems:"center",width:"100%",maxWidth:600}}>
+        {title&&<p style={{fontSize:13,fontWeight:700,color:"#fff",marginBottom:10,textAlign:"center"}}>{title}</p>}
+        <div style={{background:"#fff",borderRadius:12,padding:8,width:"min(92vw,92vh)",height:"min(92vw,92vh)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <img src={src} style={{width:"100%",height:"100%",objectFit:"contain"}}/>
+        </div>
+        <button onClick={onClose} style={{marginTop:16,padding:"12px 48px",background:"#fff",color:"#000",border:"none",borderRadius:30,fontSize:15,fontWeight:700,cursor:"pointer"}}>
+          ✕ 閉じる
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// タッチ/クリックで拡大できる画像
+function ZoomableImage({ src, style={}, label="" }) {
+  const [open, setOpen] = useState(false);
+  if (!src) return null;
+  return (
+    <>
+      <img
+        src={src}
+        style={{...style, cursor:"zoom-in"}}
+        onClick={()=>setOpen(true)}
+        title="タップで拡大"
+      />
+      {open&&<ImageZoom src={src} onClose={()=>setOpen(false)} title={label}/>}
+    </>
   );
 }
 
@@ -1089,7 +1130,7 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
         return (
           <div key={item.id} style={{background:C.surface,borderRadius:14,border:`1px solid ${isLockedByOther?C.redBorder:isLockedByMe?C.orangeBorder:C.border}`,padding:16,opacity:isLockedByOther?0.6:1,transition:"opacity 0.2s"}}>
             <div style={{display:"flex",alignItems:"center",gap:12}}>
-              <img src={item.imageData} style={{width:52,height:52,objectFit:"contain",borderRadius:8,background:"#fff",padding:3,flexShrink:0}}/>
+              <ZoomableImage src={item.imageData} style={{width:52,height:52,objectFit:"contain",borderRadius:8,background:"#fff",padding:3,flexShrink:0}} label={item.label}/>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:2}}>
                   <p style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.label}</p>
@@ -1164,7 +1205,7 @@ function ShippedList({ items }) {
         <div key={item.id} style={{background:C.surface,borderRadius:14,border:`1px solid ${C.greenBorder}`,padding:16}}>
           {/* ヘッダー */}
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-            <img src={item.imageData} style={{width:48,height:48,objectFit:"contain",borderRadius:8,background:"#fff",padding:3,flexShrink:0}}/>
+            <ZoomableImage src={item.imageData} style={{width:52,height:52,objectFit:"contain",borderRadius:8,background:"#fff",padding:3,flexShrink:0}} label={`QR: ${item.label}`}/>
             <div style={{flex:1,minWidth:0}}>
               <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:2}}>
                 <p style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.label}</p>
@@ -1174,40 +1215,37 @@ function ShippedList({ items }) {
             </div>
           </div>
 
-          {/* 売れた商品画像 */}
+          {/* 売れた商品画像（タップで拡大） */}
           {item.formData?.soldImage&&(
             <div style={{marginBottom:12}}>
-              <p style={{fontSize:10,color:C.muted,marginBottom:4}}>売れた商品の画像</p>
-              <img src={item.formData.soldImage} style={{maxWidth:"100%",maxHeight:120,borderRadius:8,objectFit:"contain",background:C.surface2}}/>
+              <p style={{fontSize:10,color:C.muted,marginBottom:4}}>売れた商品の画像（タップで拡大）</p>
+              <ZoomableImage
+                src={item.formData.soldImage}
+                style={{maxWidth:"100%",maxHeight:140,borderRadius:8,objectFit:"contain",background:C.surface2,display:"block"}}
+                label="売れた商品"
+              />
             </div>
           )}
 
-          {/* 3つの時間 */}
+          {/* タイムライン */}
           <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12,background:C.surface2,borderRadius:10,padding:"10px 12px",border:`1px solid ${C.border}`}}>
             <p style={{fontSize:10,color:C.muted,fontWeight:700,marginBottom:2}}>タイムライン</p>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:14}}>🛒</span>
-              <div>
-                <p style={{fontSize:10,color:C.muted}}>購入された日時</p>
-                <p style={{fontSize:12,fontWeight:600}}>{item.formData?.datetime||"—"}</p>
+            {[
+              {icon:"🛒", label:"購入された日時",       val:item.formData?.datetime||"—", color:C.text},
+              {icon:"✅", label:"読み込み済になった日時", val:tsToStr(item.readAt)||"—",   color:C.accent},
+              {icon:"🚚", label:"発送完了になった日時",   val:tsToStr(item.shippedAt)||"—",color:C.green},
+            ].map((t,i,arr)=>(
+              <div key={t.icon}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:16,flexShrink:0}}>{t.icon}</span>
+                  <div>
+                    <p style={{fontSize:10,color:C.muted}}>{t.label}</p>
+                    <p style={{fontSize:12,fontWeight:600,color:t.color}}>{t.val}</p>
+                  </div>
+                </div>
+                {i<arr.length-1&&<div style={{width:2,height:10,background:C.border,marginLeft:8,marginTop:2}}/>}
               </div>
-            </div>
-            <div style={{width:1,height:12,background:C.border,marginLeft:16}}/>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:14}}>✅</span>
-              <div>
-                <p style={{fontSize:10,color:C.muted}}>読み込み済になった日時</p>
-                <p style={{fontSize:12,fontWeight:600}}>{tsToStr(item.readAt)||"—"}</p>
-              </div>
-            </div>
-            <div style={{width:1,height:12,background:C.border,marginLeft:16}}/>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:14}}>🚚</span>
-              <div>
-                <p style={{fontSize:10,color:C.muted}}>発送完了になった日時</p>
-                <p style={{fontSize:12,fontWeight:600,color:C.green}}>{tsToStr(item.shippedAt)||"—"}</p>
-              </div>
-            </div>
+            ))}
           </div>
 
           {/* 商品情報 */}
@@ -1244,24 +1282,31 @@ function QRReadList({ items }) {
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       {items.map(item=>(
         <div key={item.id} style={{background:C.surface,borderRadius:14,border:`1px solid ${C.greenBorder}`,padding:16}}>
+          {/* ヘッダー */}
           <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
-            <span style={{fontSize:26,flexShrink:0}}>✅</span>
+            <ZoomableImage src={item.imageData} style={{width:52,height:52,objectFit:"contain",borderRadius:8,background:"#fff",padding:3,flexShrink:0}} label={`QR: ${item.label}`}/>
             <div style={{flex:1}}>
               <p style={{fontWeight:700,fontSize:14}}>{item.label}</p>
-              <p style={{fontSize:11,color:C.green,fontWeight:600}}>読み込み済: {tsToStr(item.readAt)}</p>
+              <p style={{fontSize:11,color:C.green,fontWeight:600}}>✅ 読み込み済: {tsToStr(item.readAt)}</p>
             </div>
           </div>
           {/* 売れた商品画像 */}
           {item.formData?.soldImage&&(
             <div style={{marginBottom:10}}>
-              <img src={item.formData.soldImage} style={{maxWidth:"100%",maxHeight:120,borderRadius:8,objectFit:"contain",background:C.surface2}}/>
+              <p style={{fontSize:10,color:C.muted,marginBottom:4}}>売れた商品の画像（タップで拡大）</p>
+              <ZoomableImage
+                src={item.formData.soldImage}
+                style={{maxWidth:"100%",maxHeight:140,borderRadius:8,objectFit:"contain",background:C.surface2,display:"block"}}
+                label="売れた商品"
+              />
             </div>
           )}
+          {/* 商品情報 */}
           {item.formData&&(
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
               {[
                 ["商品名",    item.formData.productName],
-                ["売れた日時", item.formData.datetime],
+                ["売れた日時",item.formData.datetime],
                 ["個数",      item.formData.quantity],
                 ["ジャンル",  item.formData.genre],
                 ["金額",      item.formData.amount?`¥${Number(item.formData.amount).toLocaleString()}`:""],
@@ -1282,7 +1327,6 @@ function QRReadList({ items }) {
 
 function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[] }) {
   const [showQR,    setShowQR]    = useState(false);
-  const [zoomQR,    setZoomQR]    = useState(false);
   const [checked,   setChecked]   = useState(false);
   const [selItemId, setSelItemId] = useState("");
   const [soldImage, setSoldImage] = useState(null); // 売れた商品画像
@@ -1428,27 +1472,9 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[] }
         {showQR&&isComplete&&(
           <div style={{marginBottom:16}}>
             <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:20,background:"#fff",borderRadius:14,border:`1px solid ${C.border}`}}>
-              <img src={item.imageData} style={{width:200,height:200,objectFit:"contain"}}/>
+              <ZoomableImage src={item.imageData} style={{width:200,height:200,objectFit:"contain"}} label={item.label}/>
               <p style={{color:"#555",fontSize:12,marginTop:8,marginBottom:10}}>スキャンしてください</p>
-              <button onClick={()=>setZoomQR(true)} style={{padding:"8px 20px",background:"#0d1117",color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer"}}>
-                🔍 拡大表示
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* QR拡大モーダル */}
-        {zoomQR&&(
-          <div onClick={()=>setZoomQR(false)} style={{position:"fixed",inset:0,background:"#000",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
-            <div onClick={e=>e.stopPropagation()} style={{width:"100vw",height:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:12}}>
-              <p style={{fontSize:13,fontWeight:700,color:"#fff",marginBottom:10,textAlign:"center"}}>{item.label}</p>
-              <div style={{background:"#fff",borderRadius:12,padding:10,width:"min(92vw,92vh)",height:"min(92vw,92vh)",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                <img src={item.imageData} style={{width:"100%",height:"100%",objectFit:"contain"}}/>
-              </div>
-              <p style={{color:"#aaa",fontSize:12,marginTop:10,marginBottom:14}}>スキャンしてください</p>
-              <button onClick={()=>setZoomQR(false)} style={{padding:"12px 40px",background:"#fff",color:"#000",border:"none",borderRadius:30,fontSize:15,fontWeight:700,cursor:"pointer"}}>
-                ✕ 閉じる
-              </button>
+              <p style={{fontSize:11,color:C.muted,marginTop:4}}>タップで拡大表示</p>
             </div>
           </div>
         )}
