@@ -1,4 +1,4 @@
-// @version 5.5 - 2026-04-05
+// @version 5.6 - 2026-04-05
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -814,12 +814,35 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
   }
   async function handleSave(formData) {
     const readAt = new Date().toLocaleString("ja-JP",{hour12:false});
-    // soldImageを圧縮してFirestoreに保存（1MB制限対策）
     let savedFormData = {...formData};
     if (formData.soldImage) {
-      savedFormData.soldImage = await compressImage(formData.soldImage, 500, 0.6);
+      // 段階的に圧縮してFirestoreの1MB制限に収める
+      let compressed = await compressImage(formData.soldImage, 400, 0.5);
+      // base64サイズチェック（おおよそ750KB以下になるよう）
+      while (compressed.length > 750000) {
+        compressed = await compressImage(compressed, 300, 0.4);
+      }
+      savedFormData.soldImage = compressed;
+      console.log("soldImage size:", compressed.length, "bytes");
     }
-    await updateDoc(doc(db,"qr_items",selectedItem.id),{status:"read",lockedBy:null,formData:savedFormData,readAt:serverTimestamp()});
+    // QRのimageDataと合計サイズをチェック
+    const totalSize = (selectedItem.imageData||"").length + (savedFormData.soldImage||"").length;
+    console.log("Total doc size estimate:", totalSize, "bytes");
+    if (totalSize > 900000) {
+      // サイズ超過の場合はsoldImageをさらに圧縮
+      if (savedFormData.soldImage) {
+        savedFormData.soldImage = await compressImage(savedFormData.soldImage, 200, 0.3);
+      }
+    }
+    try {
+      await updateDoc(doc(db,"qr_items",selectedItem.id),{status:"read",lockedBy:null,formData:savedFormData,readAt:serverTimestamp()});
+    } catch(e) {
+      console.error("Firestore save error:", e);
+      // soldImageなしで再試行
+      const {soldImage, ...formDataWithoutImage} = savedFormData;
+      await updateDoc(doc(db,"qr_items",selectedItem.id),{status:"read",lockedBy:null,formData:formDataWithoutImage,readAt:serverTimestamp()});
+      showToast("画像サイズが大きすぎたため画像なしで保存しました",C.orange);
+    }
     await addDoc(collection(db,"qr_log"),{userName:user.name,action:"保存",detail:`保存: ${selectedItem.label} / ${formData.productName}`,createdAt:serverTimestamp()});
     await addNotice("qr_save",`${user.name} が「${selectedItem.label}」を読み込み完了しました`,"master");
     // 自動Excelエクスポート
