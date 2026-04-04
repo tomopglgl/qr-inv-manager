@@ -1,4 +1,4 @@
-// @version 4.0 - 2026-04-05
+// @version 4.1 - 2026-04-05
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -729,11 +729,11 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
   const visibleQRs = isMaster
     ? qrItems
     : qrItems.filter(i=>{
-        if (i.registeredRole==="master") {
-          // マスター登録：全員向け or 自分指定のみ表示
-          return !i.assignedTo || i.assignedTo===user.name;
+        // マスター登録：全員向け or 自分指定のみ表示（未読み込みも読み込み済みも）
+        if (!i.registeredBy || i.registeredRole==="master") {
+          return !i.assignedMember || i.assignedMember===user.name;
         }
-        // メンバー登録：自分のみ表示
+        // メンバー登録：自分が登録したもののみ
         return i.registeredBy===user.name;
       });
   const unreadItems  = visibleQRs.filter(i=>i.status==="unread");
