@@ -794,54 +794,113 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
 
 function QRUploader({ qrItems, user, showToast }) {
   const [label,    setLabel]    = useState("");
+  const [catInput, setCatInput] = useState("");
+  const [showCats, setShowCats] = useState(false);
   const [preview,  setPreview]  = useState(null);
   const [imgData,  setImgData]  = useState(null);
   const [uploading,setUploading]= useState(false);
-  const fileRef=useRef();
+  const fileRef = useRef();
+
+  // 既存QRから取得したカテゴリ一覧
+  const existingCats = [...new Set(qrItems.map(i=>i.category).filter(Boolean))].sort();
+  const filteredCats = existingCats.filter(c=>c.toLowerCase().includes(catInput.toLowerCase())&&c!==catInput);
+
   function handleFile(e) {
     const file=e.target.files[0]; if(!file)return;
     const r=new FileReader();
     r.onload=ev=>{setPreview(ev.target.result);setImgData(ev.target.result);};
     r.readAsDataURL(file);
   }
+
   async function upload() {
-    if (!imgData)return; setUploading(true);
-    const lbl=label||`QR-${Date.now()}`;
-    await addDoc(collection(db,"qr_items"),{label:lbl,imageData:imgData,status:"unread",lockedBy:null,formData:null,uploadedAt:serverTimestamp()});
-    await addDoc(collection(db,"qr_log"),{userName:user.name,action:"QR登録",detail:`登録: ${lbl}`,createdAt:serverTimestamp()});
+    if (!imgData){showToast("QR画像をアップロードしてください",C.red);return;}
+    setUploading(true);
+    const lbl = label||`QR-${Date.now()}`;
+    const cat = catInput.trim()||"未分類";
+    await addDoc(collection(db,"qr_items"),{
+      label:lbl, category:cat,
+      imageData:imgData, status:"unread",
+      lockedBy:null, formData:null,
+      linkedItemId:null,
+      uploadedAt:serverTimestamp()
+    });
+    await addDoc(collection(db,"qr_log"),{userName:user.name,action:"QR登録",detail:`登録: ${lbl} [${cat}]`,createdAt:serverTimestamp()});
     showToast(`「${lbl}」を登録しました`);
-    setLabel("");setPreview(null);setImgData(null);
-    if(fileRef.current)fileRef.current.value="";
+    setLabel(""); setCatInput(""); setPreview(null); setImgData(null);
+    if(fileRef.current) fileRef.current.value="";
     setUploading(false);
   }
+
   return (
     <div>
       <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:20,marginBottom:12}}>
         <h3 style={{fontSize:15,fontWeight:700,marginBottom:14}}>QRコード登録</h3>
-        <div style={{border:`2px dashed ${C.border}`,borderRadius:12,padding:32,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",marginBottom:14,minHeight:140,background:C.surface2}} onClick={()=>fileRef.current?.click()} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f){const ev={target:{files:[f]}};handleFile(ev);}}}>
-          {preview?<img src={preview} style={{maxHeight:160,maxWidth:"100%",borderRadius:8}}/>:<div style={{textAlign:"center"}}><div style={{fontSize:36,marginBottom:8}}>📷</div><p style={{color:C.muted,fontSize:13}}>クリックまたはドラッグでアップロード</p></div>}
+
+        {/* 画像アップロード */}
+        <div style={{border:`2px dashed ${C.border}`,borderRadius:12,padding:32,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",marginBottom:14,minHeight:140,background:C.surface2}}
+          onClick={()=>fileRef.current?.click()}
+          onDragOver={e=>e.preventDefault()}
+          onDrop={e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f){const ev={target:{files:[f]}};handleFile(ev);}}}>
+          {preview
+            ?<img src={preview} style={{maxHeight:160,maxWidth:"100%",borderRadius:8}}/>
+            :<div style={{textAlign:"center"}}><div style={{fontSize:36,marginBottom:8}}>📷</div><p style={{color:C.muted,fontSize:13}}>クリックまたはドラッグでアップロード</p></div>
+          }
         </div>
         <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{display:"none"}}/>
-        <Fg label="ラベル名"><input value={label} onChange={e=>setLabel(e.target.value)} style={inputS} placeholder="例: 荷物001"/></Fg>
+
+        {/* ラベル名 */}
+        <div style={{marginBottom:14}}>
+          <label style={labelS}>ラベル名</label>
+          <input value={label} onChange={e=>setLabel(e.target.value)} style={inputS} placeholder="例: 荷物001（空白の場合は自動生成）"/>
+        </div>
+
+        {/* カテゴリ */}
+        <div style={{marginBottom:16,position:"relative"}}>
+          <label style={labelS}>カテゴリ ★</label>
+          <input
+            value={catInput}
+            onChange={e=>{setCatInput(e.target.value);setShowCats(true);}}
+            onFocus={()=>setShowCats(true)}
+            onBlur={()=>setTimeout(()=>setShowCats(false),160)}
+            style={inputS}
+            placeholder="例: ゆうパケットポスト、ネコポス"
+          />
+          {/* サジェスト */}
+          {showCats&&filteredCats.length>0&&(
+            <div style={{position:"absolute",top:"100%",left:0,right:0,background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,zIndex:100,boxShadow:"0 8px 24px rgba(0,0,0,0.4)",overflow:"hidden"}}>
+              {filteredCats.map(c=>(
+                <div key={c} onMouseDown={()=>{setCatInput(c);setShowCats(false);}} style={{padding:"9px 14px",cursor:"pointer",fontSize:13,borderBottom:`1px solid ${C.border}`,color:C.text}} onMouseEnter={e=>e.currentTarget.style.background=C.surface2} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>{c}</div>
+              ))}
+            </div>
+          )}
+          {/* 発送方法クイック選択 */}
+          <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:8}}>
+            {SHIPPING_METHODS.map(m=>(
+              <button key={m.id} onClick={()=>setCatInput(m.name)} style={{padding:"4px 11px",fontSize:11,border:`1px solid ${catInput===m.name?m.color:C.border}`,borderRadius:20,background:catInput===m.name?m.color+"20":C.surface2,color:catInput===m.name?m.color:C.muted,display:"flex",alignItems:"center",gap:4,fontWeight:catInput===m.name?700:400}}>
+                <span>{m.icon}</span>{m.name}
+              </button>
+            ))}
+          </div>
+          {/* 既存カテゴリクイック選択 */}
+          {existingCats.length>0&&(
+            <div style={{marginTop:8}}>
+              <p style={{fontSize:10,color:C.faint,marginBottom:4}}>使用中のカテゴリ：</p>
+              <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                {existingCats.map(c=>(
+                  <button key={c} onClick={()=>setCatInput(c)} style={{padding:"3px 10px",fontSize:11,border:`1px solid ${catInput===c?C.accent:C.border}`,borderRadius:20,background:catInput===c?C.accentDim:C.surface2,color:catInput===c?C.accent:C.muted}}>
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
         <button onClick={upload} disabled={!imgData||uploading} style={{padding:"11px 24px",background:imgData?C.accent:C.surface2,color:imgData?"#fff":C.faint,border:"none",borderRadius:10,fontSize:14,fontWeight:700,cursor:imgData?"pointer":"not-allowed"}}>
           {uploading?"登録中...":"📦 登録する"}
         </button>
       </div>
-      <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:20}}>
-        <h4 style={{fontSize:13,fontWeight:700,color:C.muted,marginBottom:10}}>登録済み ({qrItems.length}件)</h4>
-        <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:220,overflowY:"auto"}}>
-          {qrItems.map(item=>(
-            <div key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:C.surface2,borderRadius:10,border:`1px solid ${C.border}`}}>
-              <img src={item.imageData} style={{width:40,height:40,objectFit:"contain",borderRadius:6,background:"#fff",padding:2}}/>
-              <div style={{flex:1,minWidth:0}}><p style={{fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.label}</p><p style={{fontSize:10,color:C.muted}}>{tsToStr(item.uploadedAt)}</p></div>
-              <span style={{fontSize:11,fontWeight:600,padding:"2px 9px",borderRadius:20,background:item.status==="read"?C.greenDim:C.surface,color:item.status==="read"?C.green:C.muted,border:`1px solid ${item.status==="read"?C.greenBorder:C.border}`}}>{item.status==="read"?"✅ 済":"⏳ 未"}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
+
 
 function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly=false }) {
   const [filterCat, setFilterCat] = useState("すべて");
