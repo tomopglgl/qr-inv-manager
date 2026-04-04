@@ -922,11 +922,23 @@ function QRReadList({ items }) {
   );
 }
 
-function QRFormView({ item, user, onSave, onCancel }) {
-  const [showQR, setShowQR] = useState(false);
-  const [checked,setChecked]= useState(false);
-  const [form,   setForm]   = useState({productName:"",datetime:new Date().toISOString().slice(0,16),quantity:"",genre:"",memberName:user.name,amount:""});
+function QRFormView({ item, user, onSave, onCancel, invItems=[] }) {
+  const [showQR,    setShowQR]    = useState(false);
+  const [checked,   setChecked]   = useState(false);
+  const [selItemId, setSelItemId] = useState("");
+  const [form, setForm] = useState({productName:"",datetime:new Date().toISOString().slice(0,16),quantity:"",genre:"",memberName:user.name,amount:""});
+
+  const selInvItem = invItems.find(i=>i.id===selItemId) || null;
+  const shipMethod = selInvItem ? SHIPPING_METHODS.find(m=>m.id===selInvItem.shippingMethodId)||null : null;
+
+  function handleItemSelect(id) {
+    setSelItemId(id);
+    const it = invItems.find(i=>i.id===id);
+    if (it) setForm(p=>({...p, productName:it.name}));
+  }
+
   const isComplete=form.productName&&form.datetime&&form.quantity&&form.genre&&form.amount;
+
   return (
     <div style={{animation:"fadeUp 0.3s ease"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
@@ -942,19 +954,17 @@ function QRFormView({ item, user, onSave, onCancel }) {
             <label style={labelS}>在庫から商品を選ぶ（任意）</label>
             <select value={selItemId} onChange={e=>handleItemSelect(e.target.value)} style={inputS}>
               <option value="">選択しない（手動入力）</option>
-              {invItems.map(i=>(
-                <option key={i.id} value={i.id}>
-                  {i.name}（残{i.qty}{i.unit}）{i.shippingMethodId?` — ${SHIPPING_METHODS.find(m=>m.id===i.shippingMethodId)?.name||i.shippingMethodId}`:""}
-                </option>
-              ))}
+              {invItems.map(i=>{
+                const sm = SHIPPING_METHODS.find(m=>m.id===i.shippingMethodId)||null;
+                return <option key={i.id} value={i.id}>{i.name}（残{i.qty}{i.unit}）{sm?" — "+sm.name:""}</option>;
+              })}
             </select>
-            {selInvItem?.shippingMethodId&&(()=>{
-              const m=SHIPPING_METHODS.find(sm=>sm.id===selInvItem.shippingMethodId);
-              return m?<div style={{marginTop:6,display:"flex",alignItems:"center",gap:6,padding:"6px 12px",background:`${m.color}15`,borderRadius:8,border:`1px solid ${m.color}40`}}>
-                <span>{m.icon}</span>
-                <span style={{fontSize:12,fontWeight:600,color:m.color}}>発送方法: {m.name}</span>
-              </div>:null;
-            })()}
+            {shipMethod&&(
+              <div style={{marginTop:6,display:"flex",alignItems:"center",gap:6,padding:"6px 12px",background:shipMethod.color+"18",borderRadius:8,border:"1px solid "+shipMethod.color+"40"}}>
+                <span>{shipMethod.icon}</span>
+                <span style={{fontSize:12,fontWeight:600,color:shipMethod.color}}>発送方法: {shipMethod.name}</span>
+              </div>
+            )}
           </div>
         )}
 
