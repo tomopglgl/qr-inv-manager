@@ -27,9 +27,6 @@ if (IS_CONFIGURED) {
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════
 const GENRES = ["食品","電子機器","衣類","雑貨","医薬品","書籍","その他"];
-const UNIT_PRESETS = ["個","枚","本","冊","箱","袋","缶","kg","g","L","ml","セット","台","足"];
-
-// 発送方法マスター
 const SHIPPING_METHODS = [
   { id:"yupacket_post",      name:"ゆうパケットポスト",     icon:"📮", color:"#e53e3e" },
   { id:"yupacket_post_mini", name:"ゆうパケットポストmini", icon:"📮", color:"#dd6b20" },
@@ -37,9 +34,9 @@ const SHIPPING_METHODS = [
   { id:"yupacket_plus",      name:"ゆうパケットプラス",      icon:"📦", color:"#38a169" },
   { id:"mercari",            name:"メルカリ便",             icon:"🛍", color:"#2b6cb0" },
   { id:"size60",             name:"60cm発送",               icon:"📫", color:"#6b46c1" },
-  { id:"other",              name:"その他",                 icon:"🚚", color:"#718096" },
+  { id:"other",              name:"その他",                 icon:"📋", color:"#718096" },
 ];
-
+const UNIT_PRESETS = ["個","枚","本","冊","箱","袋","缶","kg","g","L","ml","セット","台","足"];
 function genId()  { return Math.random().toString(36).slice(2)+Date.now().toString(36); }
 function tsToStr(ts) {
   if (!ts) return "";
@@ -52,9 +49,9 @@ function tsToStr(ts) {
 // EXCEL EXPORT (CSV形式 - Excelで開ける)
 // ═══════════════════════════════════════════════════════════════════
 function exportToExcel(rows, filename) {
-  const headers = ["ラベル","商品名","発送方法","年月日時","個数","ジャンル","メンバー名","金額(円)","読込日時"];
+  const headers = ["ラベル","商品名","年月日時","個数","ジャンル","メンバー名","金額(円)","読込日時"];
   const csvRows = [headers, ...rows.map(r => [
-    r.label||"", r.productName||"", r.shippingMethod||"", r.datetime||"", r.quantity||"",
+    r.label||"", r.productName||"", r.datetime||"", r.quantity||"",
     r.genre||"", r.memberName||"", r.amount||"", r.readAt||""
   ])];
   const bom = "\uFEFF";
@@ -247,7 +244,7 @@ export default function App() {
 
       <main style={{maxWidth:860,margin:"0 auto",padding:16}}>
         {appMode==="inventory"&&<InventoryApp items={invItems} history={invHist} members={members} user={user} isMaster={isMaster} showToast={showToast} addNotice={addNotice}/>}
-        {appMode==="qr"&&<QRApp qrItems={qrItems} qrLog={qrLog} invItems={invItems} members={members} user={user} isMaster={isMaster} showToast={showToast} addNotice={addNotice}/>}
+        {appMode==="qr"&&<QRApp qrItems={qrItems} qrLog={qrLog} members={members} user={user} isMaster={isMaster} showToast={showToast} addNotice={addNotice} invItems={invItems}/>}
         {appMode==="sales"&&<SalesApp qrItems={qrItems} members={members} user={user} isMaster={isMaster}/>}
       </main>
     </div>
@@ -435,15 +432,14 @@ function InvCard({ item, isMaster, onSelect, changeQty }) {
   const bc=empty?C.redBorder:low?C.orangeBorder:C.border;
   return (
     <div style={{background:C.surface,borderRadius:14,overflow:"hidden",border:`1px solid ${bc}`}}>
-      {(() => { const sm = SHIPPING_METHODS.find(m=>m.id===item.shippingMethodId); return (
       <div onClick={onSelect} style={{width:"100%",aspectRatio:"4/3",cursor:"pointer",background:item.image?`url(${item.image}) center/cover`:C.surface2,display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}>
         {!item.image&&<span style={{fontSize:34,opacity:0.2}}>📦</span>}
         {empty&&<div style={{position:"absolute",top:7,right:7,background:C.red,color:"#fff",fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:20}}>在庫ゼロ</div>}
         {!empty&&low&&<div style={{position:"absolute",top:7,right:7,background:C.orange,color:"#fff",fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:20}}>要補充</div>}
-        {sm&&<div style={{position:"absolute",bottom:6,left:6,background:`${sm.color}ee`,color:"#fff",fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:20,display:"flex",alignItems:"center",gap:3}}><span>{sm.icon}</span><span>{sm.name}</span></div>}
-      </div>); })()}
+      </div>
       <div style={{padding:"10px 10px 12px"}}>
         <p onClick={onSelect} style={{fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</p>
+        {item.shippingMethodId&&(()=>{const m=SHIPPING_METHODS.find(sm=>sm.id===item.shippingMethodId);return m?<span style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:9,fontWeight:600,padding:"1px 7px",borderRadius:20,background:`${m.color}20`,color:m.color,marginBottom:3}}>{m.icon} {m.name}</span>:null;})()}
         <p style={{fontSize:10,color:C.muted,marginBottom:10}}>¥{(item.price||0).toLocaleString()} / {item.unit}</p>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <button onClick={()=>changeQty(item,-1)} disabled={item.qty===0} style={{width:32,height:32,borderRadius:8,border:"none",fontSize:18,fontWeight:700,background:item.qty===0?C.surface2:C.redDim,color:item.qty===0?C.faint:C.red,cursor:item.qty===0?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>－</button>
@@ -473,6 +469,7 @@ function InvDetail({ item, isMaster, changeQty, history, onBack, onEdit, onDelet
         <div>
           <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
             {item.category&&<span style={{fontSize:11,background:C.accentDim,color:C.accent,padding:"2px 10px",borderRadius:20,border:`1px solid ${C.accentBorder}`,fontWeight:700}}>{item.category}</span>}
+            {item.shippingMethodId&&(()=>{const m=SHIPPING_METHODS.find(sm=>sm.id===item.shippingMethodId);return m?<span style={{fontSize:11,padding:"2px 10px",borderRadius:20,fontWeight:700,background:`${m.color}20`,color:m.color,border:`1px solid ${m.color}50`,display:"flex",alignItems:"center",gap:4}}><span>{m.icon}</span>{m.name}</span>:null;})()}
             {empty&&<span style={{fontSize:11,background:C.redDim,color:C.red,padding:"2px 10px",borderRadius:20,border:`1px solid ${C.redBorder}`,fontWeight:700}}>在庫ゼロ</span>}
             {!empty&&low&&<span style={{fontSize:11,background:C.orangeDim,color:C.orange,padding:"2px 10px",borderRadius:20,border:`1px solid ${C.orangeBorder}`,fontWeight:700}}>要補充</span>}
           </div>
@@ -635,19 +632,6 @@ function InvItemForm({ close, existing, items, showToast, members=[] }) {
         <div style={{gridColumn:"1/-1"}}><Fg label="単価 (円)"><input type="number" value={form.price} onChange={e=>setForm(p=>({...p,price:e.target.value}))} style={inputS}/></Fg></div>
       </div>
       <Fg label="メモ"><input value={form.note} onChange={e=>setForm(p=>({...p,note:e.target.value}))} style={inputS} placeholder="任意"/></Fg>
-      {/* 発送方法設定 */}
-      <div style={{marginBottom:12}}>
-        <label style={labelS}>発送方法</label>
-        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:4}}>
-          <button onClick={()=>setShippingMethodId("")} style={{padding:"5px 12px",fontSize:11,border:`1px solid ${!shippingMethodId?C.accent:C.border}`,borderRadius:20,background:!shippingMethodId?C.accentDim:C.surface2,color:!shippingMethodId?C.accent:C.muted}}>設定なし</button>
-          {SHIPPING_METHODS.map(m=>(
-            <button key={m.id} onClick={()=>setShippingMethodId(m.id)} style={{padding:"5px 12px",fontSize:11,border:`1px solid ${shippingMethodId===m.id?m.color:C.border}`,borderRadius:20,background:shippingMethodId===m.id?`${m.color}20`:C.surface2,color:shippingMethodId===m.id?m.color:C.muted,display:"flex",alignItems:"center",gap:4}}>
-              <span>{m.icon}</span><span>{m.name}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
       <div style={{marginBottom:12}}>
         <label style={labelS}>公開するメンバー（未選択 = 全員に公開）</label>
         <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:4}}>
@@ -699,7 +683,7 @@ function InvAddUser({ close, showToast }) {
 // ═══════════════════════════════════════════════════════════════════
 // ▌ QR APP
 // ═══════════════════════════════════════════════════════════════════
-function QRApp({ qrItems, qrLog, invItems=[], members, user, isMaster, showToast, addNotice }) {
+function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice }) {
   const [tab,        setTab]        = useState("unread");
   const [selectedItem,setSelected]  = useState(null);
 
@@ -718,10 +702,10 @@ function QRApp({ qrItems, qrLog, invItems=[], members, user, isMaster, showToast
     await updateDoc(doc(db,"qr_items",selectedItem.id),{status:"read",lockedBy:null,formData,readAt:serverTimestamp()});
     await addDoc(collection(db,"qr_log"),{userName:user.name,action:"保存",detail:`保存: ${selectedItem.label} / ${formData.productName}`,createdAt:serverTimestamp()});
     await addNotice("qr_save",`${user.name} が「${selectedItem.label}」を読み込み完了しました`,"master");
+    // 自動Excelエクスポート
     exportToExcel([{
       label:selectedItem.label,
       productName:formData.productName,
-      shippingMethod:formData.shippingMethod||"",
       datetime:formData.datetime,
       quantity:formData.quantity,
       genre:formData.genre,
@@ -749,7 +733,7 @@ function QRApp({ qrItems, qrLog, invItems=[], members, user, isMaster, showToast
     showToast("ロックを解除しました",C.orange);
   }
 
-  if (selectedItem) return <QRFormView item={selectedItem} user={user} invItems={invItems.filter(i=>!i.visibleTo||i.visibleTo.length===0||i.visibleTo.includes(user.name))} onSave={handleSave} onCancel={handleCancel}/>;
+  if (selectedItem) return <QRFormView item={selectedItem} user={user} onSave={handleSave} onCancel={handleCancel} invItems={myInvItems}/>;
 
   const masterTabs=[{id:"upload",label:"QR登録",cnt:null},{id:"unread",label:"未読み込み",cnt:unreadItems.length},{id:"read",label:"読み込み済",cnt:allReadItems.length},{id:"log",label:"操作ログ",cnt:null}];
   const memberTabs=[{id:"unread",label:"未読み込み",cnt:unreadItems.length},{id:"myread",label:"自分の読込済",cnt:myReadItems.length}];
@@ -767,8 +751,8 @@ function QRApp({ qrItems, qrLog, invItems=[], members, user, isMaster, showToast
       </div>
 
       {tab==="upload"&&isMaster&&<QRUploader qrItems={qrItems} user={user} showToast={showToast}/>}
-      {tab==="unread"&&<QRListWithCategory items={unreadItems} user={user} isMaster={isMaster} onSelect={handleSelect} onDelete={handleDelete} onRelease={handleRelease}/>}
-      {tab==="read"&&isMaster&&<QRListWithCategory items={allReadItems} user={user} isMaster={isMaster} readOnly onDelete={handleDelete} onRelease={handleRelease}/>}
+      {tab==="unread"&&<QRList items={unreadItems} user={user} isMaster={isMaster} onSelect={handleSelect} onDelete={handleDelete} onRelease={handleRelease}/>}
+      {tab==="read"&&isMaster&&<QRList items={allReadItems} user={user} isMaster={isMaster} readOnly onDelete={handleDelete} onRelease={handleRelease}/>}
       {tab==="myread"&&!isMaster&&<QRReadList items={myReadItems}/>}
       {tab==="log"&&isMaster&&(
         <div>
@@ -799,7 +783,7 @@ function QRUploader({ qrItems, user, showToast }) {
   function handleFile(e) {
     const file=e.target.files[0]; if(!file)return;
     const r=new FileReader();
-    r.onload=ev=>{setPreview(ev.target.result);setImgData(ev.target.result);if(!label)setLabel(file.name.replace(/\.[^/.]+$/,""));};
+    r.onload=ev=>{setPreview(ev.target.result);setImgData(ev.target.result);};
     r.readAsDataURL(file);
   }
   async function upload() {
@@ -841,73 +825,30 @@ function QRUploader({ qrItems, user, showToast }) {
   );
 }
 
-
-// ── QRリスト（カテゴリフィルター付き） ───────────────────────────
-function QRListWithCategory({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly=false }) {
+function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly=false }) {
   const [filterCat, setFilterCat] = useState("すべて");
-  const categories = ["すべて", ...new Set(items.map(i=>i.category||"未分類"))].sort();
-  const filtered = filterCat==="すべて" ? items : items.filter(i=>(i.category||"未分類")===filterCat);
+  const cats = ["すべて",...new Set(items.map(i=>i.category).filter(Boolean))].sort();
+  const filtered = filterCat==="すべて" ? items : items.filter(i=>i.category===filterCat);
+  const [editCatId, setEditCatId] = useState(null);
+  const [editCatVal, setEditCatVal] = useState("");
+
+  async function saveCat(itemId) {
+    await updateDoc(doc(db,"qr_items",itemId),{category:editCatVal.trim()||"未分類"});
+    setEditCatId(null);
+  }
+
   if (!items.length) return <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:40,textAlign:"center"}}><p style={{color:C.muted}}>該当するQRコードはありません</p></div>;
   return (
     <div>
-      {categories.length>2&&(
-        <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
-          {categories.map(c=>(
-            <button key={c} onClick={()=>setFilterCat(c)} style={{padding:"5px 14px",borderRadius:20,border:`1px solid ${filterCat===c?C.accent:C.border}`,background:filterCat===c?C.accentDim:C.surface2,color:filterCat===c?C.accent:C.muted,fontSize:12,fontWeight:filterCat===c?700:400}}>
-              {c}{c!=="すべて"&&` (${items.filter(i=>(i.category||"未分類")===c).length})`}
-            </button>
-          ))}
-        </div>
-      )}
-      <div style={{display:"flex",flexDirection:"column",gap:10}}>
-        {filtered.map(item=>{
-          const isLockedByOther=item.lockedBy&&item.lockedBy!==user?.name;
-          const isLockedByMe=item.lockedBy===user?.name;
-          return (
-            <div key={item.id} style={{background:C.surface,borderRadius:14,border:`1px solid ${isLockedByOther?C.redBorder:isLockedByMe?C.orangeBorder:C.border}`,padding:16,opacity:isLockedByOther?0.6:1,transition:"opacity 0.2s"}}>
-              <div style={{display:"flex",alignItems:"center",gap:12}}>
-                <img src={item.imageData} style={{width:52,height:52,objectFit:"contain",borderRadius:8,background:"#fff",padding:3,flexShrink:0}}/>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2,flexWrap:"wrap"}}>
-                    <p style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.label}</p>
-                    {item.category&&<span style={{fontSize:10,background:C.accentDim,color:C.accent,padding:"1px 7px",borderRadius:20,border:`1px solid ${C.accentBorder}`,whiteSpace:"nowrap"}}>{item.category}</span>}
-                  </div>
-                  <p style={{fontSize:11,color:C.muted}}>{tsToStr(item.uploadedAt)}</p>
-                  {isLockedByOther&&<p style={{fontSize:11,color:C.red,marginTop:2}}>🔒 {item.lockedBy} が使用中</p>}
-                  {isLockedByMe&&<p style={{fontSize:11,color:C.orange,marginTop:2}}>✏️ あなたが選択中</p>}
-                  {item.status==="read"&&item.formData?.memberName&&<p style={{fontSize:11,color:C.green,marginTop:2}}>✅ {item.formData.memberName} が読み込み済</p>}
-                  {item.formData?.productName&&<p style={{fontSize:11,color:C.muted,marginTop:1}}>📦 {item.formData.productName}</p>}
-                </div>
-                <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end"}}>
-                  {!readOnly&&onSelect&&<button onClick={()=>onSelect(item)} disabled={isLockedByOther} style={{padding:"7px 14px",background:isLockedByOther?C.surface2:isLockedByMe?C.orangeDim:C.accentDim,color:isLockedByOther?C.faint:isLockedByMe?C.orange:C.accent,border:`1px solid ${isLockedByOther?C.border:isLockedByMe?C.orangeBorder:C.accentBorder}`,borderRadius:8,fontSize:12,fontWeight:700,cursor:isLockedByOther?"not-allowed":"pointer"}}>
-                    {isLockedByMe?"再開":"選択"}
-                  </button>}
-                  {isMaster&&!readOnly&&isLockedByOther&&<button onClick={()=>onRelease(item)} style={{padding:"5px 10px",background:C.orangeDim,color:C.orange,border:`1px solid ${C.orangeBorder}`,borderRadius:8,fontSize:11}}>🔓 解除</button>}
-                  {isMaster&&<button onClick={()=>onDelete(item)} style={{padding:"5px 10px",background:C.redDim,color:C.red,border:`1px solid ${C.redBorder}`,borderRadius:8,fontSize:11}}>🗑 削除</button>}
-                </div>
-              </div>
-              {item.formData&&(
-                <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.border}`,display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-                  {[["商品名",item.formData.productName],["発送方法",item.formData.shippingMethod],["個数",item.formData.quantity],["金額",item.formData.amount?`¥${Number(item.formData.amount).toLocaleString()}`:""]] .map(([k,v])=>v&&(
-                    <div key={k} style={{background:C.surface2,borderRadius:8,padding:"6px 10px",border:`1px solid ${C.border}`}}>
-                      <p style={{fontSize:10,color:C.muted,marginBottom:2}}>{k}</p><p style={{fontSize:13,fontWeight:600}}>{v}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+        {cats.map(c=>(
+          <button key={c} onClick={()=>setFilterCat(c)} style={{padding:"4px 12px",fontSize:11,border:`1px solid ${filterCat===c?C.accent:C.border}`,borderRadius:20,background:filterCat===c?C.accentDim:C.surface2,color:filterCat===c?C.accent:C.muted,fontWeight:filterCat===c?700:400}}>
+            {c} {c!=="すべて"&&`(${items.filter(i=>i.category===c).length})`}
+          </button>
+        ))}
       </div>
-    </div>
-  );
-}
-
-function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly=false }) {
-  if (!items.length) return <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:40,textAlign:"center"}}><p style={{color:C.muted}}>該当するQRコードはありません</p></div>;
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      {items.map(item=>{
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {filtered.map(item=>{
         const isLockedByOther=item.lockedBy&&item.lockedBy!==user?.name;
         const isLockedByMe=item.lockedBy===user?.name;
         return (
@@ -915,7 +856,19 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
             <div style={{display:"flex",alignItems:"center",gap:12}}>
               <img src={item.imageData} style={{width:52,height:52,objectFit:"contain",borderRadius:8,background:"#fff",padding:3,flexShrink:0}}/>
               <div style={{flex:1,minWidth:0}}>
-                <p style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.label}</p>
+                <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:2}}>
+                  <p style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.label}</p>
+                  {editCatId===item.id
+                    ?<div style={{display:"flex",gap:4,alignItems:"center"}}>
+                        <input value={editCatVal} onChange={e=>setEditCatVal(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveCat(item.id)} style={{...inputS,padding:"2px 8px",fontSize:11,width:140}} autoFocus/>
+                        <button onClick={()=>saveCat(item.id)} style={{padding:"2px 8px",background:C.accent,color:"#fff",border:"none",borderRadius:6,fontSize:11,fontWeight:700}}>保存</button>
+                        <button onClick={()=>setEditCatId(null)} style={{padding:"2px 6px",background:C.surface2,color:C.muted,border:`1px solid ${C.border}`,borderRadius:6,fontSize:11}}>×</button>
+                      </div>
+                    :<button onClick={()=>{setEditCatId(item.id);setEditCatVal(item.category||"");}} style={{fontSize:10,fontWeight:600,padding:"1px 7px",borderRadius:20,background:item.category?C.accentDim:C.surface2,color:item.category?C.accent:C.muted,border:`1px solid ${item.category?C.accentBorder:C.border}`,whiteSpace:"nowrap",flexShrink:0,cursor:"pointer"}}>
+                        {item.category||"＋ カテゴリ"}
+                      </button>
+                  }
+                </div>
                 <p style={{fontSize:11,color:C.muted}}>{tsToStr(item.uploadedAt)}</p>
                 {isLockedByOther&&<p style={{fontSize:11,color:C.red,marginTop:2}}>🔒 {item.lockedBy} が使用中</p>}
                 {isLockedByMe&&<p style={{fontSize:11,color:C.orange,marginTop:2}}>✏️ あなたが選択中</p>}
@@ -941,6 +894,7 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
@@ -968,69 +922,45 @@ function QRReadList({ items }) {
   );
 }
 
-function QRFormView({ item, user, invItems=[], onSave, onCancel }) {
-  const [showQR,   setShowQR]   = useState(false);
-  const [checked,  setChecked]  = useState(false);
-  const [selItemId,setSelItemId]= useState("");
-  const [form, setForm] = useState({
-    productName:"",
-    shippingMethod:item.category||"",
-    datetime:new Date().toISOString().slice(0,16),
-    quantity:"1",
-    genre:"",
-    memberName:user.name,
-    amount:"",
-  });
-
-  function handleItemSelect(itemId) {
-    setSelItemId(itemId);
-    const inv = invItems.find(i=>i.id===itemId);
-    if (inv) {
-      const sm = SHIPPING_METHODS.find(m=>m.id===inv.shippingMethodId);
-      setForm(p=>({...p, productName:inv.name, shippingMethod:sm?.name||item.category||p.shippingMethod}));
-    }
-  }
-
+function QRFormView({ item, user, onSave, onCancel }) {
+  const [showQR, setShowQR] = useState(false);
+  const [checked,setChecked]= useState(false);
+  const [form,   setForm]   = useState({productName:"",datetime:new Date().toISOString().slice(0,16),quantity:"",genre:"",memberName:user.name,amount:""});
   const isComplete=form.productName&&form.datetime&&form.quantity&&form.genre&&form.amount;
   return (
     <div style={{animation:"fadeUp 0.3s ease"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
         <button onClick={onCancel} style={{padding:"7px 14px",background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,fontSize:13,color:C.muted}}>← 戻る</button>
-        <div>
-          <h2 style={{fontSize:16,fontWeight:700}}>{item.label}</h2>
-          {item.category&&<span style={{fontSize:11,background:C.accentDim,color:C.accent,padding:"1px 8px",borderRadius:20,border:`1px solid ${C.accentBorder}`}}>{item.category}</span>}
-        </div>
+        <h2 style={{fontSize:16,fontWeight:700}}>{item.label}</h2>
       </div>
       <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:20}}>
         <h3 style={{fontSize:15,fontWeight:700,marginBottom:16}}>📋 情報入力</h3>
 
-        {/* 在庫から商品を選ぶ */}
+        {/* 在庫商品と紐付け */}
         {invItems.length>0&&(
-          <div style={{marginBottom:16,background:C.surface2,borderRadius:12,padding:14,border:`1px solid ${C.accentBorder}`}}>
-            <label style={labelS}>📦 在庫から商品を選ぶ（商品名・発送方法が自動入力）</label>
+          <div style={{marginBottom:14}}>
+            <label style={labelS}>在庫から商品を選ぶ（任意）</label>
             <select value={selItemId} onChange={e=>handleItemSelect(e.target.value)} style={inputS}>
-              <option value="">選択してください（手動入力も可）</option>
-              {invItems.map(i=>{
-                const sm=SHIPPING_METHODS.find(m=>m.id===i.shippingMethodId);
-                return <option key={i.id} value={i.id}>{i.name}（残{i.qty}{i.unit}）{sm?` — ${sm.name}`:""}</option>;
-              })}
+              <option value="">選択しない（手動入力）</option>
+              {invItems.map(i=>(
+                <option key={i.id} value={i.id}>
+                  {i.name}（残{i.qty}{i.unit}）{i.shippingMethodId?` — ${SHIPPING_METHODS.find(m=>m.id===i.shippingMethodId)?.name||i.shippingMethodId}`:""}
+                </option>
+              ))}
             </select>
+            {selInvItem?.shippingMethodId&&(()=>{
+              const m=SHIPPING_METHODS.find(sm=>sm.id===selInvItem.shippingMethodId);
+              return m?<div style={{marginTop:6,display:"flex",alignItems:"center",gap:6,padding:"6px 12px",background:`${m.color}15`,borderRadius:8,border:`1px solid ${m.color}40`}}>
+                <span>{m.icon}</span>
+                <span style={{fontSize:12,fontWeight:600,color:m.color}}>発送方法: {m.name}</span>
+              </div>:null;
+            })()}
           </div>
         )}
 
-        {[
-          {key:"productName",    label:"商品名",   type:"text",          ph:"例: Tシャツ 白 M"},
-          {key:"shippingMethod", label:"発送方法", type:"text",          ph:"例: ゆうパケットポスト"},
-          {key:"datetime",       label:"年月日時", type:"datetime-local", ph:""},
-          {key:"quantity",       label:"個数",     type:"number",        ph:"例: 1"},
-          {key:"memberName",     label:"メンバー名",type:"text",          ph:""},
-          {key:"amount",         label:"金額",     type:"number",        ph:"例: 3000"},
-        ].map(f=>(
-          <Fg key={f.key} label={f.label}>
-            <input type={f.type} value={form[f.key]} onChange={e=>setForm(p=>({...p,[f.key]:e.target.value}))} style={inputS} placeholder={f.ph} readOnly={f.key==="memberName"}/>
-          </Fg>
+        {[{key:"productName",label:"商品名",type:"text",ph:"例: Tシャツ 白 M"},{key:"datetime",label:"年月日時",type:"datetime-local"},{key:"quantity",label:"個数",type:"number",ph:"例: 3"},{key:"memberName",label:"メンバー名",type:"text"},{key:"amount",label:"金額",type:"number",ph:"例: 5000"}].map(f=>(
+          <Fg key={f.key} label={f.label}><input type={f.type} value={form[f.key]} onChange={e=>setForm(p=>({...p,[f.key]:e.target.value}))} style={inputS} placeholder={f.ph} readOnly={f.key==="memberName"}/></Fg>
         ))}
-
         <div style={{marginBottom:16}}>
           <label style={labelS}>ジャンル</label>
           <select value={form.genre} onChange={e=>setForm(p=>({...p,genre:e.target.value}))} style={inputS}>
@@ -1043,7 +973,7 @@ function QRFormView({ item, user, invItems=[], onSave, onCancel }) {
         </button>
         {showQR&&isComplete&&(
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:24,background:"#fff",borderRadius:14,marginBottom:16,border:`1px solid ${C.border}`}}>
-            <img src={item.imageData} style={{width:220,height:220,objectFit:"contain"}}/>
+            <img src={item.imageData} style={{width:200,height:200,objectFit:"contain"}}/>
             <p style={{color:"#555",fontSize:12,marginTop:10}}>スキャンしてください</p>
           </div>
         )}
@@ -1051,7 +981,7 @@ function QRFormView({ item, user, invItems=[], onSave, onCancel }) {
           <input type="checkbox" checked={checked} onChange={e=>setChecked(e.target.checked)} style={{width:18,height:18,accentColor:C.accent,cursor:"pointer"}}/>
           <label style={{color:C.text,fontSize:14,cursor:"pointer",fontWeight:checked?600:400}}>読み込みチェック完了</label>
         </div>
-        <button onClick={()=>onSave(form)} disabled={!checked||!isComplete} style={{width:"100%",padding:"13px",background:checked&&isComplete?C.green:C.surface2,color:checked&&isComplete?"#fff":C.faint,border:"none",borderRadius:10,fontSize:15,fontWeight:700,cursor:checked&&isComplete?"pointer":"not-allowed",transition:"all 0.2s"}}>
+        <button onClick={()=>onSave({...form, linkedItemId:selItemId||null})} disabled={!checked||!isComplete} style={{width:"100%",padding:"13px",background:checked&&isComplete?C.green:C.surface2,color:checked&&isComplete?"#fff":C.faint,border:"none",borderRadius:10,fontSize:15,fontWeight:700,cursor:checked&&isComplete?"pointer":"not-allowed",transition:"all 0.2s"}}>
           💾 保存して完了
         </button>
       </div>
