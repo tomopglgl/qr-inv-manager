@@ -1,4 +1,4 @@
-// @version 4.2 - 2026-04-05
+// @version 4.4 - 2026-04-05
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -27,7 +27,7 @@ if (IS_CONFIGURED) {
 // ═══════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════
-const GENRES = ["食品","電子機器","衣類","雑貨","医薬品","書籍","その他"];
+const GENRES = ["衣類","小物アクセサリー","ライト/照明","バッグ","消耗品","工具","スマホアクセサリー"];
 const SHIPPING_METHODS = [
   { id:"yupacket_post",      name:"ゆうパケットポスト",     icon:"📮", color:"#e53e3e" },
   { id:"yupacket_post_mini", name:"ゆうパケットポストmini", icon:"📮", color:"#dd6b20" },
@@ -1164,9 +1164,11 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[] }
       (h.createdAt?.toDate?h.createdAt.toDate().toDateString():new Date().toDateString())===today
     );
     const totalMinus = recentMinus.reduce((s,h)=>s+Math.abs(h.delta),0);
-    // 既に選択済みのQR数（同じ商品を紐付けたQR）
-    // ここでは単純に商品名を自動入力
-    setForm(p=>({...p, productName:it.name, quantity: totalMinus||1}));
+    // 商品のカテゴリをジャンルに自動セット
+    const cat = it.category||"";
+    // GENRESに一致するカテゴリがあればそのまま使用、なければ「その他」
+    const matchedGenre = GENRES.includes(cat) ? cat : (cat ? "その他" : "");
+    setForm(p=>({...p, productName:it.name, quantity:totalMinus||1, genre:matchedGenre}));
   }
 
   const isComplete=form.productName&&form.datetime&&form.quantity&&form.genre&&form.amount;
@@ -1222,6 +1224,9 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[] }
         ))}
         <div style={{marginBottom:16}}>
           <label style={labelS}>ジャンル</label>
+          {selInvItem?.category&&!GENRES.includes(selInvItem.category)&&(
+            <p style={{fontSize:11,color:C.muted,marginBottom:4}}>商品カテゴリ「{selInvItem.category}」→「その他」として設定</p>
+          )}
           <select value={form.genre} onChange={e=>setForm(p=>({...p,genre:e.target.value}))} style={inputS}>
             <option value="">選択してください</option>
             {GENRES.map(g=><option key={g}>{g}</option>)}
