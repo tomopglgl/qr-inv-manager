@@ -63,6 +63,23 @@ function exportToExcel(rows, filename) {
   URL.revokeObjectURL(url);
 }
 
+// 発送方法バッジコンポーネント
+function ShippingBadge({ methodId, size="sm" }) {
+  const m = methodId ? SHIPPING_METHODS.find(sm=>sm.id===methodId) : null;
+  if (!m) return null;
+  if (size === "sm") return (
+    <span style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:9,fontWeight:600,padding:"1px 7px",borderRadius:20,background:m.color+"20",color:m.color,marginBottom:3}}>
+      {m.icon} {m.name}
+    </span>
+  );
+  return (
+    <span style={{fontSize:11,padding:"2px 10px",borderRadius:20,fontWeight:700,background:m.color+"20",color:m.color,border:"1px solid "+m.color+"50",display:"inline-flex",alignItems:"center",gap:4}}>
+      <span>{m.icon}</span>{m.name}
+    </span>
+  );
+}
+
+
 // ═══════════════════════════════════════════════════════════════════
 // DESIGN TOKENS
 // ═══════════════════════════════════════════════════════════════════
@@ -439,7 +456,7 @@ function InvCard({ item, isMaster, onSelect, changeQty }) {
       </div>
       <div style={{padding:"10px 10px 12px"}}>
         <p onClick={onSelect} style={{fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</p>
-        {item.shippingMethodId&&(()=>{const m=SHIPPING_METHODS.find(sm=>sm.id===item.shippingMethodId);return m?<span style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:9,fontWeight:600,padding:"1px 7px",borderRadius:20,background:`${m.color}20`,color:m.color,marginBottom:3}}>{m.icon} {m.name}</span>:null;})()}
+        <ShippingBadge methodId={item.shippingMethodId} size="sm"/>
         <p style={{fontSize:10,color:C.muted,marginBottom:10}}>¥{(item.price||0).toLocaleString()} / {item.unit}</p>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <button onClick={()=>changeQty(item,-1)} disabled={item.qty===0} style={{width:32,height:32,borderRadius:8,border:"none",fontSize:18,fontWeight:700,background:item.qty===0?C.surface2:C.redDim,color:item.qty===0?C.faint:C.red,cursor:item.qty===0?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>－</button>
@@ -469,7 +486,7 @@ function InvDetail({ item, isMaster, changeQty, history, onBack, onEdit, onDelet
         <div>
           <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
             {item.category&&<span style={{fontSize:11,background:C.accentDim,color:C.accent,padding:"2px 10px",borderRadius:20,border:`1px solid ${C.accentBorder}`,fontWeight:700}}>{item.category}</span>}
-            {item.shippingMethodId&&(()=>{const m=SHIPPING_METHODS.find(sm=>sm.id===item.shippingMethodId);return m?<span style={{fontSize:11,padding:"2px 10px",borderRadius:20,fontWeight:700,background:`${m.color}20`,color:m.color,border:`1px solid ${m.color}50`,display:"flex",alignItems:"center",gap:4}}><span>{m.icon}</span>{m.name}</span>:null;})()}
+            <ShippingBadge methodId={item.shippingMethodId} size="lg"/>
             {empty&&<span style={{fontSize:11,background:C.redDim,color:C.red,padding:"2px 10px",borderRadius:20,border:`1px solid ${C.redBorder}`,fontWeight:700}}>在庫ゼロ</span>}
             {!empty&&low&&<span style={{fontSize:11,background:C.orangeDim,color:C.orange,padding:"2px 10px",borderRadius:20,border:`1px solid ${C.orangeBorder}`,fontWeight:700}}>要補充</span>}
           </div>
@@ -683,13 +700,14 @@ function InvAddUser({ close, showToast }) {
 // ═══════════════════════════════════════════════════════════════════
 // ▌ QR APP
 // ═══════════════════════════════════════════════════════════════════
-function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice }) {
+function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, invItems=[] }) {
   const [tab,        setTab]        = useState("unread");
   const [selectedItem,setSelected]  = useState(null);
 
   const unreadItems  = qrItems.filter(i=>i.status==="unread");
   const myReadItems  = qrItems.filter(i=>i.status==="read"&&i.formData?.memberName===user.name);
   const allReadItems = qrItems.filter(i=>i.status==="read");
+  const myInvItems   = isMaster ? invItems : invItems.filter(i=>!i.visibleTo||i.visibleTo.length===0||i.visibleTo.includes(user.name));
 
   async function handleSelect(item) {
     if (item.lockedBy&&item.lockedBy!==user.name) return;
