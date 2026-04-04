@@ -901,6 +901,26 @@ function QRUploader({ qrItems, user, showToast }) {
         </button>
       </div>
 
+      {/* 登録済み一覧 */}
+      <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:20}}>
+        <h4 style={{fontSize:13,fontWeight:700,color:C.muted,marginBottom:10}}>登録済み ({qrItems.length}件)</h4>
+        <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:220,overflowY:"auto"}}>
+          {qrItems.map(item=>(
+            <div key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:C.surface2,borderRadius:10,border:`1px solid ${C.border}`}}>
+              <img src={item.imageData} style={{width:40,height:40,objectFit:"contain",borderRadius:6,background:"#fff",padding:2}}/>
+              <div style={{flex:1,minWidth:0}}>
+                <p style={{fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.label}</p>
+                {item.category&&<p style={{fontSize:10,color:C.accent}}>{item.category}</p>}
+                <p style={{fontSize:10,color:C.muted}}>{tsToStr(item.uploadedAt)}</p>
+              </div>
+              <span style={{fontSize:11,fontWeight:600,padding:"2px 9px",borderRadius:20,background:item.status==="read"?C.greenDim:C.surface,color:item.status==="read"?C.green:C.muted,border:`1px solid ${item.status==="read"?C.greenBorder:C.border}`,whiteSpace:"nowrap"}}>{item.status==="read"?"✅ 済":"⏳ 未"}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly=false }) {
   const [filterCat, setFilterCat] = useState("すべて");
