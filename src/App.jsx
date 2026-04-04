@@ -947,19 +947,7 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[] }) {
             ))}
           </div>
           {!isMaster&&<p style={{fontSize:11,color:C.muted,marginTop:6}}>※ メンバーはネコポス・ゆうパケットプラス・60cm発送のみ登録できます</p>}
-          {/* 既存カテゴリクイック選択 */}
-          {existingCats.length>0&&(
-            <div style={{marginTop:8}}>
-              <p style={{fontSize:10,color:C.faint,marginBottom:4}}>使用中のカテゴリ：</p>
-              <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-                {existingCats.map(c=>(
-                  <button key={c} onClick={()=>setCatInput(c)} style={{padding:"3px 10px",fontSize:11,border:`1px solid ${catInput===c?C.accent:C.border}`,borderRadius:20,background:catInput===c?C.accentDim:C.surface2,color:catInput===c?C.accent:C.muted}}>
-                    {c}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+
         </div>
 
         <button onClick={upload} disabled={!imgData||uploading} style={{padding:"11px 24px",background:imgData?C.accent:C.surface2,color:imgData?"#fff":C.faint,border:"none",borderRadius:10,fontSize:14,fontWeight:700,cursor:imgData?"pointer":"not-allowed"}}>
@@ -967,8 +955,8 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[] }) {
         </button>
       </div>
 
-      {/* 登録済み一覧 */}
-      <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:20}}>
+      {/* 登録済み一覧 - マスターのみ表示 */}
+      {isMaster&&<div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:20}}>
         <h4 style={{fontSize:13,fontWeight:700,color:C.muted,marginBottom:10}}>登録済み ({qrItems.length}件)</h4>
         <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:220,overflowY:"auto"}}>
           {qrItems.map(item=>(
@@ -983,7 +971,7 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[] }) {
             </div>
           ))}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
@@ -1013,6 +1001,42 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
   if (!items.length) return <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:40,textAlign:"center"}}><p style={{color:C.muted}}>該当するQRコードはありません</p></div>;
   return (
     <div>
+      {/* マスター編集モーダル */}
+      {editId&&isMaster&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:20,padding:24,width:"100%",maxWidth:400,border:`1px solid ${C.border}`,boxShadow:"0 24px 64px rgba(0,0,0,0.6)"}}>
+            <h3 style={{fontSize:16,fontWeight:700,marginBottom:16}}>✏️ QRコードを編集</h3>
+            <div style={{marginBottom:12}}>
+              <label style={labelS}>ラベル名</label>
+              <input value={editLabel} onChange={e=>setEditLabel(e.target.value)} style={inputS} placeholder="例: 荷物001"/>
+            </div>
+            <div style={{marginBottom:12}}>
+              <label style={labelS}>カテゴリ</label>
+              <input value={editCat} onChange={e=>setEditCat(e.target.value)} style={inputS} placeholder="例: ゆうパケットポスト"/>
+              <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:6}}>
+                {SHIPPING_METHODS.map(m=>(
+                  <button key={m.id} type="button" onClick={()=>setEditCat(m.name)} style={{padding:"3px 10px",fontSize:11,border:`1px solid ${editCat===m.name?m.color:C.border}`,borderRadius:20,background:editCat===m.name?m.color+"20":C.surface2,color:editCat===m.name?m.color:C.muted,display:"flex",alignItems:"center",gap:4,cursor:"pointer"}}>
+                    <span>{m.icon}</span>{m.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{marginBottom:16}}>
+              <label style={labelS}>使用メンバー指定（任意）</label>
+              <select value={editMember} onChange={e=>setEditMember(e.target.value)} style={inputS}>
+                <option value="">指定なし（全員が使用可）</option>
+                {members.filter(m=>m.role==="member").map(m=>(
+                  <option key={m.id} value={m.name}>{m.name}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <button type="button" onClick={()=>setEditId(null)} style={{flex:1,padding:"11px",background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,fontSize:14,color:C.muted,cursor:"pointer"}}>キャンセル</button>
+              <button type="button" onClick={()=>saveEdit(editId)} style={{flex:2,padding:"11px",background:C.accent,color:"#fff",border:"none",borderRadius:10,fontSize:14,fontWeight:700,cursor:"pointer"}}>保存する</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* カテゴリフィルター */}
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
         {cats.map(c=>(
@@ -1058,7 +1082,17 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
                 </button>}
                 {isMaster&&!readOnly&&isLockedByOther&&<button onClick={()=>onRelease(item)} style={{padding:"5px 10px",background:C.orangeDim,color:C.orange,border:`1px solid ${C.orangeBorder}`,borderRadius:8,fontSize:11}}>🔓 解除</button>}
                 {isMaster&&item.status==="unread"&&(
-                  <button onClick={()=>{setEditId(item.id);setEditLabel(item.label||"");setEditCat(item.category||"");setEditMember(item.assignedMember||"");}} style={{padding:"5px 10px",background:C.accentDim,color:C.accent,border:`1px solid ${C.accentBorder}`,borderRadius:8,fontSize:11}}>✏️</button>
+                  <button
+                    type="button"
+                    onClick={(e)=>{
+                      e.stopPropagation();
+                      setEditId(item.id);
+                      setEditLabel(item.label||"");
+                      setEditCat(item.category||"");
+                      setEditMember(item.assignedMember||"");
+                    }}
+                    style={{padding:"5px 10px",background:C.accentDim,color:C.accent,border:`1px solid ${C.accentBorder}`,borderRadius:8,fontSize:11,cursor:"pointer"}}
+                  >✏️ 編集</button>
                 )}
                 {(isMaster||(item.registeredBy===user?.name&&item.status==="unread"))&&(
                   <button onClick={()=>onDelete(item)} style={{padding:"5px 10px",background:C.redDim,color:C.red,border:`1px solid ${C.redBorder}`,borderRadius:8,fontSize:11}}>
