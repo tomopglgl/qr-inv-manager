@@ -1073,12 +1073,14 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[] }) {
 
         {/* QR拡大モーダル */}
         {zoomQR&&(
-          <div onClick={()=>setZoomQR(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
-            <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:20,padding:28,maxWidth:380,width:"100%",textAlign:"center",boxShadow:"0 24px 64px rgba(0,0,0,0.5)"}}>
-              <p style={{fontSize:14,fontWeight:700,color:"#1a202c",marginBottom:16}}>{item.label}</p>
-              <img src={item.imageData} style={{width:"100%",maxWidth:300,height:"auto",borderRadius:8}}/>
-              <p style={{color:"#555",fontSize:13,marginTop:12,marginBottom:20}}>スキャンしてください</p>
-              <button onClick={()=>setZoomQR(false)} style={{width:"100%",padding:"12px",background:"#0d1117",color:"#fff",border:"none",borderRadius:10,fontSize:15,fontWeight:700,cursor:"pointer"}}>
+          <div onClick={()=>setZoomQR(false)} style={{position:"fixed",inset:0,background:"#000",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+            <div onClick={e=>e.stopPropagation()} style={{width:"100vw",height:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:12}}>
+              <p style={{fontSize:13,fontWeight:700,color:"#fff",marginBottom:10,textAlign:"center"}}>{item.label}</p>
+              <div style={{background:"#fff",borderRadius:12,padding:10,width:"min(92vw,92vh)",height:"min(92vw,92vh)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <img src={item.imageData} style={{width:"100%",height:"100%",objectFit:"contain"}}/>
+              </div>
+              <p style={{color:"#aaa",fontSize:12,marginTop:10,marginBottom:14}}>スキャンしてください</p>
+              <button onClick={()=>setZoomQR(false)} style={{padding:"12px 40px",background:"#fff",color:"#000",border:"none",borderRadius:30,fontSize:15,fontWeight:700,cursor:"pointer"}}>
                 ✕ 閉じる
               </button>
             </div>
