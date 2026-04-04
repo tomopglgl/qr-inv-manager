@@ -264,7 +264,7 @@ export default function App() {
 
       <main style={{maxWidth:860,margin:"0 auto",padding:16}}>
         {appMode==="inventory"&&<InventoryApp items={invItems} history={invHist} members={members} user={user} isMaster={isMaster} showToast={showToast} addNotice={addNotice}/>}
-        {appMode==="qr"&&<QRApp qrItems={qrItems} qrLog={qrLog} members={members} user={user} isMaster={isMaster} showToast={showToast} addNotice={addNotice} invItems={invItems}/>}
+        {appMode==="qr"&&<QRApp qrItems={qrItems} qrLog={qrLog} members={members} user={user} isMaster={isMaster} showToast={showToast} addNotice={addNotice} invItems={invItems} invHist={invHist}/>}
         {appMode==="sales"&&<SalesApp qrItems={qrItems} members={members} user={user} isMaster={isMaster}/>}
       </main>
     </div>
@@ -719,7 +719,7 @@ function InvAddUser({ close, showToast }) {
 // ═══════════════════════════════════════════════════════════════════
 // ▌ QR APP
 // ═══════════════════════════════════════════════════════════════════
-function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, invItems=[] }) {
+function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, invItems=[], invHist=[] }) {
   const [tab,        setTab]        = useState("unread");
   const [selectedItem,setSelected]  = useState(null);
 
@@ -743,6 +743,11 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
 
   async function handleSelect(item) {
     if (item.lockedBy&&item.lockedBy!==user.name) return;
+    // 使用メンバー指定がある場合、指定メンバーとマスターのみ選択可
+    if (item.assignedMember&&item.assignedMember!==user.name&&!isMaster) {
+      showToast(`このQRコードは ${item.assignedMember} 専用です`, C.red);
+      return;
+    }
     await updateDoc(doc(db,"qr_items",item.id),{lockedBy:user.name});
     await addDoc(collection(db,"qr_log"),{userName:user.name,action:"選択",detail:`QR選択: ${item.label}`,createdAt:serverTimestamp()});
     setSelected({...item,lockedBy:user.name});
@@ -783,7 +788,7 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
     showToast("ロックを解除しました",C.orange);
   }
 
-  if (selectedItem) return <QRFormView item={selectedItem} user={user} onSave={handleSave} onCancel={handleCancel} invItems={myInvItems}/>;
+  if (selectedItem) return <QRFormView item={selectedItem} user={user} onSave={handleSave} onCancel={handleCancel} invItems={myInvItems} invHistory={invHist}/>;
 
   const masterTabs=[{id:"upload",label:"QR登録",cnt:null},{id:"unread",label:"未読み込み",cnt:unreadItems.length},{id:"read",label:"読み込み済",cnt:allReadItems.length},{id:"log",label:"操作ログ",cnt:null}];
   const memberTabs=[{id:"upload",label:"QR登録",cnt:null},{id:"unread",label:"未読み込み",cnt:unreadItems.length},{id:"myread",label:"自分の読込済",cnt:myReadItems.length}];
@@ -801,8 +806,8 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
       </div>
 
       {tab==="upload"&&<QRUploader qrItems={qrItems} user={user} showToast={showToast} isMaster={isMaster} members={members}/>}
-      {tab==="unread"&&<QRList items={unreadItems} user={user} isMaster={isMaster} onSelect={handleSelect} onDelete={handleDelete} onRelease={handleRelease}/>}
-      {tab==="read"&&isMaster&&<QRList items={allReadItems} user={user} isMaster={isMaster} readOnly onDelete={handleDelete} onRelease={handleRelease}/>}
+      {tab==="unread"&&<QRList items={unreadItems} user={user} isMaster={isMaster} onSelect={handleSelect} onDelete={handleDelete} onRelease={handleRelease} members={members}/>}
+      {tab==="read"&&isMaster&&<QRList items={allReadItems} user={user} isMaster={isMaster} readOnly onDelete={handleDelete} onRelease={handleRelease} members={members}/>}
       {tab==="myread"&&!isMaster&&<QRReadList items={myReadItems}/>}
       {tab==="log"&&isMaster&&(
         <div>
@@ -983,7 +988,7 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[] }) {
   );
 }
 
-function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly=false }) {
+function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly=false, members=[] }) {
   const [filterCat,    setFilterCat]    = useState("すべて");
   const [filterMember, setFilterMember] = useState("すべて");
   const cats = ["すべて",...new Set(items.map(i=>i.category).filter(Boolean))].sort();
@@ -991,12 +996,18 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
   const filtered = items
     .filter(i=>filterCat==="すべて"||i.category===filterCat)
     .filter(i=>filterMember==="すべて"||(i.assignedTo===filterMember||i.registeredBy===filterMember));
-  const [editCatId, setEditCatId] = useState(null);
-  const [editCatVal, setEditCatVal] = useState("");
+  const [editId,    setEditId]    = useState(null);
+  const [editLabel, setEditLabel] = useState("");
+  const [editCat,   setEditCat]   = useState("");
+  const [editMember,setEditMember]= useState("");
 
-  async function saveCat(itemId) {
-    await updateDoc(doc(db,"qr_items",itemId),{category:editCatVal.trim()||"未分類"});
-    setEditCatId(null);
+  async function saveEdit(itemId) {
+    await updateDoc(doc(db,"qr_items",itemId),{
+      label:   editLabel.trim()||"QR",
+      category:editCat.trim()||"未分類",
+      assignedMember: editMember||null,
+    });
+    setEditId(null);
   }
 
   if (!items.length) return <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:40,textAlign:"center"}}><p style={{color:C.muted}}>該当するQRコードはありません</p></div>;
@@ -1031,16 +1042,8 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
               <div style={{flex:1,minWidth:0}}>
                 <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:2}}>
                   <p style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.label}</p>
-                  {editCatId===item.id
-                    ?<div style={{display:"flex",gap:4,alignItems:"center"}}>
-                        <input value={editCatVal} onChange={e=>setEditCatVal(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveCat(item.id)} style={{...inputS,padding:"2px 8px",fontSize:11,width:140}} autoFocus/>
-                        <button onClick={()=>saveCat(item.id)} style={{padding:"2px 8px",background:C.accent,color:"#fff",border:"none",borderRadius:6,fontSize:11,fontWeight:700}}>保存</button>
-                        <button onClick={()=>setEditCatId(null)} style={{padding:"2px 6px",background:C.surface2,color:C.muted,border:`1px solid ${C.border}`,borderRadius:6,fontSize:11}}>×</button>
-                      </div>
-                    :<button onClick={()=>{setEditCatId(item.id);setEditCatVal(item.category||"");}} style={{fontSize:10,fontWeight:600,padding:"1px 7px",borderRadius:20,background:item.category?C.accentDim:C.surface2,color:item.category?C.accent:C.muted,border:`1px solid ${item.category?C.accentBorder:C.border}`,whiteSpace:"nowrap",flexShrink:0,cursor:"pointer"}}>
-                        {item.category||"＋ カテゴリ"}
-                      </button>
-                  }
+                  {item.category&&<span style={{fontSize:10,fontWeight:600,padding:"1px 7px",borderRadius:20,background:C.accentDim,color:C.accent,border:`1px solid ${C.accentBorder}`,whiteSpace:"nowrap",flexShrink:0}}>{item.category}</span>}
+                  {item.assignedMember&&<span style={{fontSize:10,fontWeight:600,padding:"1px 7px",borderRadius:20,background:C.purpleDim,color:C.purple,border:`1px solid ${C.purpleBorder}`,whiteSpace:"nowrap",flexShrink:0}}>👤 {item.assignedMember}</span>}
                 </div>
                 <p style={{fontSize:11,color:C.muted}}>{tsToStr(item.uploadedAt)}</p>
                 {isLockedByOther&&<p style={{fontSize:11,color:C.red,marginTop:2}}>🔒 {item.lockedBy} が使用中</p>}
@@ -1054,11 +1057,14 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
                   {isLockedByMe?"再開":"選択"}
                 </button>}
                 {isMaster&&!readOnly&&isLockedByOther&&<button onClick={()=>onRelease(item)} style={{padding:"5px 10px",background:C.orangeDim,color:C.orange,border:`1px solid ${C.orangeBorder}`,borderRadius:8,fontSize:11}}>🔓 解除</button>}
-                {(isMaster||(item.registeredBy===user?.name&&item.status==="unread"))&&
+                {isMaster&&item.status==="unread"&&(
+                  <button onClick={()=>{setEditId(item.id);setEditLabel(item.label||"");setEditCat(item.category||"");setEditMember(item.assignedMember||"");}} style={{padding:"5px 10px",background:C.accentDim,color:C.accent,border:`1px solid ${C.accentBorder}`,borderRadius:8,fontSize:11}}>✏️</button>
+                )}
+                {(isMaster||(item.registeredBy===user?.name&&item.status==="unread"))&&(
                   <button onClick={()=>onDelete(item)} style={{padding:"5px 10px",background:C.redDim,color:C.red,border:`1px solid ${C.redBorder}`,borderRadius:8,fontSize:11}}>
-                    {isMaster?"🗑 削除":"🗑"}
+                    {isMaster?"🗑":"🗑"}
                   </button>
-                }
+                )}
               </div>
             </div>
             {item.formData&&(
@@ -1101,7 +1107,7 @@ function QRReadList({ items }) {
   );
 }
 
-function QRFormView({ item, user, onSave, onCancel, invItems=[] }) {
+function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[] }) {
   const [showQR,    setShowQR]    = useState(false);
   const [zoomQR,    setZoomQR]    = useState(false);
   const [checked,   setChecked]   = useState(false);
@@ -1114,7 +1120,19 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[] }) {
   function handleItemSelect(id) {
     setSelItemId(id);
     const it = invItems.find(i=>i.id===id);
-    if (it) setForm(p=>({...p, productName:it.name}));
+    if (!it) return;
+    // 直近のマイナス操作数を確認（当日分）
+    const today = new Date().toDateString();
+    const recentMinus = invHistory.filter(h=>
+      h.itemId===id &&
+      h.userId===user.id &&
+      h.delta<0 &&
+      (h.createdAt?.toDate?h.createdAt.toDate().toDateString():new Date().toDateString())===today
+    );
+    const totalMinus = recentMinus.reduce((s,h)=>s+Math.abs(h.delta),0);
+    // 既に選択済みのQR数（同じ商品を紐付けたQR）
+    // ここでは単純に商品名を自動入力
+    setForm(p=>({...p, productName:it.name, quantity: totalMinus||1}));
   }
 
   const isComplete=form.productName&&form.datetime&&form.quantity&&form.genre&&form.amount;
@@ -1136,9 +1154,26 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[] }) {
               <option value="">選択しない（手動入力）</option>
               {invItems.map(i=>{
                 const sm = SHIPPING_METHODS.find(m=>m.id===i.shippingMethodId)||null;
-                return <option key={i.id} value={i.id}>{i.name}（残{i.qty}{i.unit}）{sm?" — "+sm.name:""}</option>;
+                // QRのカテゴリと発送方法が一致するものだけ選択可
+                const qrCat = item.category||"";
+                const methodMatch = !sm || !qrCat || sm.name===qrCat || !i.shippingMethodId;
+                return (
+                  <option key={i.id} value={i.id} disabled={!methodMatch}>
+                    {i.name}（残{i.qty}{i.unit}）{sm?" — "+sm.name:""}
+                    {!methodMatch?" ⚠️発送方法不一致":""}
+                  </option>
+                );
               })}
             </select>
+            {selItemId&&(()=>{
+              const it=invItems.find(i=>i.id===selItemId);
+              const sm=it?SHIPPING_METHODS.find(m=>m.id===it.shippingMethodId):null;
+              const qrCat=item.category||"";
+              if(sm&&qrCat&&sm.name!==qrCat){
+                return <p style={{fontSize:11,color:C.red,marginTop:4}}>⚠️ このQRコードの発送方法（{qrCat}）と商品の発送方法（{sm.name}）が一致しません</p>;
+              }
+              return null;
+            })()}
             {shipMethod&&(
               <div style={{marginTop:6,display:"flex",alignItems:"center",gap:6,padding:"6px 12px",background:shipMethod.color+"18",borderRadius:8,border:"1px solid "+shipMethod.color+"40"}}>
                 <span>{shipMethod.icon}</span>
