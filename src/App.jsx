@@ -1,4 +1,4 @@
-// @version 4.1 - 2026-04-05
+// @version 4.2 - 2026-04-05
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -1067,13 +1067,13 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
                 <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:2}}>
                   <p style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.label}</p>
                   {item.category&&<span style={{fontSize:10,fontWeight:600,padding:"1px 7px",borderRadius:20,background:C.accentDim,color:C.accent,border:`1px solid ${C.accentBorder}`,whiteSpace:"nowrap",flexShrink:0}}>{item.category}</span>}
-                  {item.assignedMember&&<span style={{fontSize:10,fontWeight:600,padding:"1px 7px",borderRadius:20,background:C.purpleDim,color:C.purple,border:`1px solid ${C.purpleBorder}`,whiteSpace:"nowrap",flexShrink:0}}>👤 {item.assignedMember}</span>}
+                  {item.assignedMember&&isMaster&&<span style={{fontSize:10,fontWeight:600,padding:"1px 7px",borderRadius:20,background:C.purpleDim,color:C.purple,border:`1px solid ${C.purpleBorder}`,whiteSpace:"nowrap",flexShrink:0}}>👤 {item.assignedMember}</span>}
                 </div>
                 <p style={{fontSize:11,color:C.muted}}>{tsToStr(item.uploadedAt)}</p>
                 {isLockedByOther&&<p style={{fontSize:11,color:C.red,marginTop:2}}>🔒 {item.lockedBy} が使用中</p>}
                 {isLockedByMe&&<p style={{fontSize:11,color:C.orange,marginTop:2}}>✏️ あなたが選択中</p>}
                 {item.status==="read"&&item.formData?.memberName&&<p style={{fontSize:11,color:C.green,marginTop:2}}>✅ {item.formData.memberName} が読み込み済</p>}
-                {item.registeredBy&&!isMaster&&item.registeredRole!=="master"&&<p style={{fontSize:10,color:C.faint,marginTop:1}}>登録: {item.registeredBy}</p>}
+                {item.registeredBy&&isMaster&&item.registeredRole!=="master"&&<p style={{fontSize:10,color:C.faint,marginTop:1}}>登録: {item.registeredBy}</p>}
                 {isMaster&&item.assignedTo&&<p style={{fontSize:10,color:C.green,marginTop:1}}>👤 {item.assignedTo} 専用</p>}
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end"}}>
