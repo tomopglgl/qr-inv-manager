@@ -1,8 +1,8 @@
-// @version 6.0 - 2026-04-05
+// @version 6.2 - 2026-04-05
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
-  getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc,
+  getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc,
   query, orderBy, limit, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
