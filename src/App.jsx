@@ -1,3 +1,4 @@
+// @version 4.0 - 2026-04-05
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -36,6 +37,8 @@ const SHIPPING_METHODS = [
   { id:"size60",             name:"60cm発送",               icon:"📫", color:"#6b46c1" },
   { id:"other",              name:"その他",                 icon:"📋", color:"#718096" },
 ];
+// メンバーが登録できる発送方法
+const MEMBER_SHIPPING_METHODS = ["nekoposu","yupacket_plus","size60"];
 const UNIT_PRESETS = ["個","枚","本","冊","箱","袋","缶","kg","g","L","ml","セット","台","足"];
 function genId()  { return Math.random().toString(36).slice(2)+Date.now().toString(36); }
 function tsToStr(ts) {
@@ -649,6 +652,22 @@ function InvItemForm({ close, existing, items, showToast, members=[] }) {
         <div style={{gridColumn:"1/-1"}}><Fg label="単価 (円)"><input type="number" value={form.price} onChange={e=>setForm(p=>({...p,price:e.target.value}))} style={inputS}/></Fg></div>
       </div>
       <Fg label="メモ"><input value={form.note} onChange={e=>setForm(p=>({...p,note:e.target.value}))} style={inputS} placeholder="任意"/></Fg>
+
+      {/* 発送方法 */}
+      <div style={{marginBottom:12}}>
+        <label style={labelS}>発送方法（メンバーに表示される）</label>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:4}}>
+          <button type="button" onClick={()=>setShippingMethodId("")} style={{padding:"4px 12px",fontSize:11,border:`1px solid ${!shippingMethodId?C.accent:C.border}`,borderRadius:20,background:!shippingMethodId?C.accentDim:C.surface2,color:!shippingMethodId?C.accent:C.muted}}>
+            設定なし
+          </button>
+          {SHIPPING_METHODS.map(m=>(
+            <button type="button" key={m.id} onClick={()=>setShippingMethodId(m.id)} style={{padding:"4px 12px",fontSize:11,border:`1px solid ${shippingMethodId===m.id?m.color:C.border}`,borderRadius:20,background:shippingMethodId===m.id?m.color+"20":C.surface2,color:shippingMethodId===m.id?m.color:C.muted,display:"flex",alignItems:"center",gap:4}}>
+              <span>{m.icon}</span>{m.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div style={{marginBottom:12}}>
         <label style={labelS}>公開するメンバー（未選択 = 全員に公開）</label>
         <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:4}}>
@@ -704,9 +723,22 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
   const [tab,        setTab]        = useState("unread");
   const [selectedItem,setSelected]  = useState(null);
 
-  const unreadItems  = qrItems.filter(i=>i.status==="unread");
-  const myReadItems  = qrItems.filter(i=>i.status==="read"&&i.formData?.memberName===user.name);
-  const allReadItems = qrItems.filter(i=>i.status==="read");
+  // 表示できるQRを絞り込む
+  // マスター：全て表示
+  // メンバー：自分登録分 + マスター登録(全員 or 自分指定) のみ
+  const visibleQRs = isMaster
+    ? qrItems
+    : qrItems.filter(i=>{
+        if (i.registeredRole==="master") {
+          // マスター登録：全員向け or 自分指定のみ表示
+          return !i.assignedTo || i.assignedTo===user.name;
+        }
+        // メンバー登録：自分のみ表示
+        return i.registeredBy===user.name;
+      });
+  const unreadItems  = visibleQRs.filter(i=>i.status==="unread");
+  const myReadItems  = visibleQRs.filter(i=>i.status==="read"&&i.formData?.memberName===user.name);
+  const allReadItems = visibleQRs.filter(i=>i.status==="read");
   const myInvItems   = isMaster ? invItems : invItems.filter(i=>!i.visibleTo||i.visibleTo.length===0||i.visibleTo.includes(user.name));
 
   async function handleSelect(item) {
@@ -754,7 +786,7 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
   if (selectedItem) return <QRFormView item={selectedItem} user={user} onSave={handleSave} onCancel={handleCancel} invItems={myInvItems}/>;
 
   const masterTabs=[{id:"upload",label:"QR登録",cnt:null},{id:"unread",label:"未読み込み",cnt:unreadItems.length},{id:"read",label:"読み込み済",cnt:allReadItems.length},{id:"log",label:"操作ログ",cnt:null}];
-  const memberTabs=[{id:"unread",label:"未読み込み",cnt:unreadItems.length},{id:"myread",label:"自分の読込済",cnt:myReadItems.length}];
+  const memberTabs=[{id:"upload",label:"QR登録",cnt:null},{id:"unread",label:"未読み込み",cnt:unreadItems.length},{id:"myread",label:"自分の読込済",cnt:myReadItems.length}];
   const tabs=isMaster?masterTabs:memberTabs;
 
   return (
@@ -768,7 +800,7 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
         ))}
       </div>
 
-      {tab==="upload"&&isMaster&&<QRUploader qrItems={qrItems} user={user} showToast={showToast}/>}
+      {tab==="upload"&&<QRUploader qrItems={qrItems} user={user} showToast={showToast} isMaster={isMaster} members={members}/>}
       {tab==="unread"&&<QRList items={unreadItems} user={user} isMaster={isMaster} onSelect={handleSelect} onDelete={handleDelete} onRelease={handleRelease}/>}
       {tab==="read"&&isMaster&&<QRList items={allReadItems} user={user} isMaster={isMaster} readOnly onDelete={handleDelete} onRelease={handleRelease}/>}
       {tab==="myread"&&!isMaster&&<QRReadList items={myReadItems}/>}
@@ -792,18 +824,25 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
   );
 }
 
-function QRUploader({ qrItems, user, showToast }) {
-  const [label,    setLabel]    = useState("");
-  const [catInput, setCatInput] = useState("");
-  const [showCats, setShowCats] = useState(false);
-  const [preview,  setPreview]  = useState(null);
-  const [imgData,  setImgData]  = useState(null);
-  const [uploading,setUploading]= useState(false);
+function QRUploader({ qrItems, user, showToast, isMaster, members=[] }) {
+  const [label,       setLabel]      = useState("");
+  const [catInput,    setCatInput]   = useState("");
+  const [showCats,    setShowCats]   = useState(false);
+  const [preview,     setPreview]    = useState(null);
+  const [imgData,     setImgData]    = useState(null);
+  const [uploading,   setUploading]  = useState(false);
+  const [assignedTo,  setAssignedTo] = useState("all"); // "all" or メンバー名
   const fileRef = useRef();
+
+  // メンバーは指定発送方法のみ表示
+  const availableMethods = isMaster
+    ? SHIPPING_METHODS
+    : SHIPPING_METHODS.filter(m=>MEMBER_SHIPPING_METHODS.includes(m.id));
 
   // 既存QRから取得したカテゴリ一覧
   const existingCats = [...new Set(qrItems.map(i=>i.category).filter(Boolean))].sort();
   const filteredCats = existingCats.filter(c=>c.toLowerCase().includes(catInput.toLowerCase())&&c!==catInput);
+  const memberList = members.filter(m=>m.role==="member");
 
   function handleFile(e) {
     const file=e.target.files[0]; if(!file)return;
@@ -822,6 +861,9 @@ function QRUploader({ qrItems, user, showToast }) {
       imageData:imgData, status:"unread",
       lockedBy:null, formData:null,
       linkedItemId:null,
+      registeredBy:user.name,
+      registeredRole:user.role,
+      assignedTo: assignedTo==="all" ? null : assignedTo,
       uploadedAt:serverTimestamp()
     });
     await addDoc(collection(db,"qr_log"),{userName:user.name,action:"QR登録",detail:`登録: ${lbl} [${cat}]`,createdAt:serverTimestamp()});
@@ -854,6 +896,24 @@ function QRUploader({ qrItems, user, showToast }) {
           <input value={label} onChange={e=>setLabel(e.target.value)} style={inputS} placeholder="例: 荷物001（空白の場合は自動生成）"/>
         </div>
 
+        {/* メンバー指定（マスターのみ） */}
+        {isMaster&&memberList.length>0&&(
+          <div style={{marginBottom:14}}>
+            <label style={labelS}>使用メンバー指定</label>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:4}}>
+              <button type="button" onClick={()=>setAssignedTo("all")} style={{padding:"5px 14px",fontSize:12,border:`1px solid ${assignedTo==="all"?C.accent:C.border}`,borderRadius:20,background:assignedTo==="all"?C.accentDim:C.surface2,color:assignedTo==="all"?C.accent:C.muted,fontWeight:assignedTo==="all"?700:400}}>
+                全員
+              </button>
+              {memberList.map(m=>(
+                <button type="button" key={m.id} onClick={()=>setAssignedTo(m.name)} style={{padding:"5px 14px",fontSize:12,border:`1px solid ${assignedTo===m.name?C.green:C.border}`,borderRadius:20,background:assignedTo===m.name?C.greenDim:C.surface2,color:assignedTo===m.name?C.green:C.muted,fontWeight:assignedTo===m.name?700:400}}>
+                  👤 {m.name}
+                </button>
+              ))}
+            </div>
+            {assignedTo!=="all"&&<p style={{fontSize:11,color:C.green,marginTop:4}}>✓ {assignedTo} 専用のQRコードとして登録されます</p>}
+          </div>
+        )}
+
         {/* カテゴリ */}
         <div style={{marginBottom:16,position:"relative"}}>
           <label style={labelS}>カテゴリ ★</label>
@@ -875,12 +935,13 @@ function QRUploader({ qrItems, user, showToast }) {
           )}
           {/* 発送方法クイック選択 */}
           <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:8}}>
-            {SHIPPING_METHODS.map(m=>(
+            {availableMethods.map(m=>(
               <button key={m.id} onClick={()=>setCatInput(m.name)} style={{padding:"4px 11px",fontSize:11,border:`1px solid ${catInput===m.name?m.color:C.border}`,borderRadius:20,background:catInput===m.name?m.color+"20":C.surface2,color:catInput===m.name?m.color:C.muted,display:"flex",alignItems:"center",gap:4,fontWeight:catInput===m.name?700:400}}>
                 <span>{m.icon}</span>{m.name}
               </button>
             ))}
           </div>
+          {!isMaster&&<p style={{fontSize:11,color:C.muted,marginTop:6}}>※ メンバーはネコポス・ゆうパケットプラス・60cm発送のみ登録できます</p>}
           {/* 既存カテゴリクイック選択 */}
           {existingCats.length>0&&(
             <div style={{marginTop:8}}>
@@ -923,9 +984,13 @@ function QRUploader({ qrItems, user, showToast }) {
 }
 
 function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly=false }) {
-  const [filterCat, setFilterCat] = useState("すべて");
+  const [filterCat,    setFilterCat]    = useState("すべて");
+  const [filterMember, setFilterMember] = useState("すべて");
   const cats = ["すべて",...new Set(items.map(i=>i.category).filter(Boolean))].sort();
-  const filtered = filterCat==="すべて" ? items : items.filter(i=>i.category===filterCat);
+  const memberNames = ["すべて",...new Set(items.map(i=>i.assignedTo||i.registeredBy).filter(Boolean))].sort();
+  const filtered = items
+    .filter(i=>filterCat==="すべて"||i.category===filterCat)
+    .filter(i=>filterMember==="すべて"||(i.assignedTo===filterMember||i.registeredBy===filterMember));
   const [editCatId, setEditCatId] = useState(null);
   const [editCatVal, setEditCatVal] = useState("");
 
@@ -937,13 +1002,24 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
   if (!items.length) return <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:40,textAlign:"center"}}><p style={{color:C.muted}}>該当するQRコードはありません</p></div>;
   return (
     <div>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+      {/* カテゴリフィルター */}
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
         {cats.map(c=>(
           <button key={c} onClick={()=>setFilterCat(c)} style={{padding:"4px 12px",fontSize:11,border:`1px solid ${filterCat===c?C.accent:C.border}`,borderRadius:20,background:filterCat===c?C.accentDim:C.surface2,color:filterCat===c?C.accent:C.muted,fontWeight:filterCat===c?700:400}}>
             {c} {c!=="すべて"&&`(${items.filter(i=>i.category===c).length})`}
           </button>
         ))}
       </div>
+      {/* メンバーフィルター */}
+      {memberNames.length>1&&(
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+          {memberNames.map(m=>(
+            <button key={m} onClick={()=>setFilterMember(m)} style={{padding:"3px 10px",fontSize:11,border:`1px solid ${filterMember===m?C.green:C.border}`,borderRadius:20,background:filterMember===m?C.greenDim:C.surface2,color:filterMember===m?C.green:C.muted,fontWeight:filterMember===m?700:400,display:"flex",alignItems:"center",gap:3}}>
+              {m!=="すべて"&&"👤"} {m}
+            </button>
+          ))}
+        </div>
+      )}
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
       {filtered.map(item=>{
         const isLockedByOther=item.lockedBy&&item.lockedBy!==user?.name;
@@ -970,13 +1046,19 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
                 {isLockedByOther&&<p style={{fontSize:11,color:C.red,marginTop:2}}>🔒 {item.lockedBy} が使用中</p>}
                 {isLockedByMe&&<p style={{fontSize:11,color:C.orange,marginTop:2}}>✏️ あなたが選択中</p>}
                 {item.status==="read"&&item.formData?.memberName&&<p style={{fontSize:11,color:C.green,marginTop:2}}>✅ {item.formData.memberName} が読み込み済</p>}
+                {item.registeredBy&&!isMaster&&item.registeredRole!=="master"&&<p style={{fontSize:10,color:C.faint,marginTop:1}}>登録: {item.registeredBy}</p>}
+                {isMaster&&item.assignedTo&&<p style={{fontSize:10,color:C.green,marginTop:1}}>👤 {item.assignedTo} 専用</p>}
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end"}}>
                 {!readOnly&&onSelect&&<button onClick={()=>onSelect(item)} disabled={isLockedByOther} style={{padding:"7px 14px",background:isLockedByOther?C.surface2:isLockedByMe?C.orangeDim:C.accentDim,color:isLockedByOther?C.faint:isLockedByMe?C.orange:C.accent,border:`1px solid ${isLockedByOther?C.border:isLockedByMe?C.orangeBorder:C.accentBorder}`,borderRadius:8,fontSize:12,fontWeight:700,cursor:isLockedByOther?"not-allowed":"pointer"}}>
                   {isLockedByMe?"再開":"選択"}
                 </button>}
                 {isMaster&&!readOnly&&isLockedByOther&&<button onClick={()=>onRelease(item)} style={{padding:"5px 10px",background:C.orangeDim,color:C.orange,border:`1px solid ${C.orangeBorder}`,borderRadius:8,fontSize:11}}>🔓 解除</button>}
-                {isMaster&&<button onClick={()=>onDelete(item)} style={{padding:"5px 10px",background:C.redDim,color:C.red,border:`1px solid ${C.redBorder}`,borderRadius:8,fontSize:11}}>🗑 削除</button>}
+                {(isMaster||(item.registeredBy===user?.name&&item.status==="unread"))&&
+                  <button onClick={()=>onDelete(item)} style={{padding:"5px 10px",background:C.redDim,color:C.red,border:`1px solid ${C.redBorder}`,borderRadius:8,fontSize:11}}>
+                    {isMaster?"🗑 削除":"🗑"}
+                  </button>
+                }
               </div>
             </div>
             {item.formData&&(
