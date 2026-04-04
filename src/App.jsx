@@ -1,4 +1,4 @@
-// @version 6.2 - 2026-04-05
+// @version 6.3 - 2026-04-05
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -218,6 +218,7 @@ export default function App() {
   const [invHist,  setInvHist]  = useState([]);
   const [qrItems,  setQrItems]  = useState([]);
   const [qrLog,    setQrLog]    = useState([]);
+  const [soldImageMap, setSoldImageMap] = useState({});
 
   if (!IS_CONFIGURED) return <SetupScreen />;
 
@@ -242,6 +243,17 @@ export default function App() {
     unsubs.push(onSnapshot(query(collection(db,"notices"),orderBy("createdAt","desc"),limit(100)), snap =>
       setNotices(snap.docs.map(d=>({id:d.id,...d.data()})))
     ));
+    // sold_images監視（画像を別コレクションに保存）
+    const soldUnsub = onSnapshot(
+      collection(db,"sold_images"),
+      snap => {
+        const map = {};
+        snap.docs.forEach(d=>{ if(d.data().imageData) map[d.id]=d.data().imageData; });
+        setSoldImageMap(map);
+      },
+      err => console.warn("sold_images:", err.code)
+    );
+    unsubs.push(soldUnsub);
     return () => unsubs.forEach(u=>u());
   }, []);
 
