@@ -1,4 +1,4 @@
-// @version 4.4 - 2026-04-05
+// @version 5.1 - 2026-04-05
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -787,10 +787,29 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
     await addDoc(collection(db,"qr_log"),{userName:user.name,action:"ロック解除",detail:`強制解除: ${item.label}`,createdAt:serverTimestamp()});
     showToast("ロックを解除しました",C.orange);
   }
+  async function handleShip(item) {
+    const memberName = item.formData?.memberName||"";
+    await updateDoc(doc(db,"qr_items",item.id),{status:"shipped",shippedAt:serverTimestamp()});
+    await addDoc(collection(db,"qr_log"),{userName:user.name,action:"発送完了",detail:`発送完了: ${item.label} / ${item.formData?.productName||""}`,createdAt:serverTimestamp()});
+    // マスターに通知
+    await addNotice("shipping",`🚚「${item.label}」が発送完了になりました（読込: ${memberName}）`,"master");
+    // 読み込んだメンバーにも通知
+    if (memberName) {
+      await addNotice("shipping",`🚚「${item.label}」が発送完了になりました`,"all");
+    }
+    showToast("発送完了にしました 🚚",C.green);
+  }
 
   if (selectedItem) return <QRFormView item={selectedItem} user={user} onSave={handleSave} onCancel={handleCancel} invItems={myInvItems} invHistory={invHist}/>;
 
-  const masterTabs=[{id:"upload",label:"QR登録",cnt:null},{id:"unread",label:"未読み込み",cnt:unreadItems.length},{id:"read",label:"読み込み済",cnt:allReadItems.length},{id:"log",label:"操作ログ",cnt:null}];
+  const shippedItems = visibleQRs.filter(i=>i.status==="shipped");
+  const masterTabs=[
+    {id:"upload", label:"QR登録",   cnt:null},
+    {id:"unread", label:"未読み込み", cnt:unreadItems.length},
+    {id:"read",   label:"読み込み済", cnt:allReadItems.length},
+    {id:"shipped",label:"発送完了",  cnt:shippedItems.length},
+    {id:"log",    label:"操作ログ",  cnt:null},
+  ];
   const memberTabs=[{id:"upload",label:"QR登録",cnt:null},{id:"unread",label:"未読み込み",cnt:unreadItems.length},{id:"myread",label:"自分の読込済",cnt:myReadItems.length}];
   const tabs=isMaster?masterTabs:memberTabs;
 
@@ -807,7 +826,8 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
 
       {tab==="upload"&&<QRUploader qrItems={qrItems} user={user} showToast={showToast} isMaster={isMaster} members={members}/>}
       {tab==="unread"&&<QRList items={unreadItems} user={user} isMaster={isMaster} onSelect={handleSelect} onDelete={handleDelete} onRelease={handleRelease} members={members}/>}
-      {tab==="read"&&isMaster&&<QRList items={allReadItems} user={user} isMaster={isMaster} readOnly onDelete={handleDelete} onRelease={handleRelease} members={members}/>}
+      {tab==="read"&&isMaster&&<QRList items={allReadItems} user={user} isMaster={isMaster} readOnly onDelete={handleDelete} onRelease={handleRelease} members={members} onShip={handleShip}/>}
+      {tab==="shipped"&&isMaster&&<ShippedList items={shippedItems}/>}
       {tab==="myread"&&!isMaster&&<QRReadList items={myReadItems}/>}
       {tab==="log"&&isMaster&&(
         <div>
@@ -976,7 +996,7 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[] }) {
   );
 }
 
-function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly=false, members=[] }) {
+function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly=false, members=[], onShip=null }) {
   const [filterCat,    setFilterCat]    = useState("すべて");
   const [filterMember, setFilterMember] = useState("すべて");
   const cats = ["すべて",...new Set(items.map(i=>i.category).filter(Boolean))].sort();
@@ -1094,6 +1114,13 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
                     style={{padding:"5px 10px",background:C.accentDim,color:C.accent,border:`1px solid ${C.accentBorder}`,borderRadius:8,fontSize:11,cursor:"pointer"}}
                   >✏️ 編集</button>
                 )}
+                {isMaster&&item.status==="read"&&onShip&&(
+                  <button
+                    type="button"
+                    onClick={(e)=>{e.stopPropagation();onShip(item);}}
+                    style={{padding:"5px 10px",background:C.greenDim,color:C.green,border:`1px solid ${C.greenBorder}`,borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer"}}
+                  >🚚 発送完了</button>
+                )}
                 {(isMaster||(item.registeredBy===user?.name&&item.status==="unread"))&&(
                   <button onClick={()=>onDelete(item)} style={{padding:"5px 10px",background:C.redDim,color:C.red,border:`1px solid ${C.redBorder}`,borderRadius:8,fontSize:11}}>
                     {isMaster?"🗑":"🗑"}
@@ -1118,23 +1145,91 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
   );
 }
 
-function QRReadList({ items }) {
-  if (!items.length) return <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:40,textAlign:"center"}}><p style={{color:C.muted}}>まだ読み込み済みはありません</p></div>;
+function ShippedList({ items }) {
+  if (!items.length) return (
+    <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:40,textAlign:"center"}}>
+      <p style={{color:C.muted}}>発送完了のQRコードはありません</p>
+    </div>
+  );
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       {items.map(item=>(
         <div key={item.id} style={{background:C.surface,borderRadius:14,border:`1px solid ${C.greenBorder}`,padding:16}}>
           <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:item.formData?10:0}}>
-            <span style={{fontSize:26}}>✅</span>
-            <div><p style={{fontWeight:700,fontSize:14}}>{item.label}</p><p style={{fontSize:11,color:C.green}}>{tsToStr(item.readAt)}</p></div>
-          </div>
-          {item.formData&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-            {[["商品名",item.formData.productName],["年月日時",item.formData.datetime],["個数",item.formData.quantity],["ジャンル",item.formData.genre],["金額",item.formData.amount?`¥${Number(item.formData.amount).toLocaleString()}`:""]].map(([k,v])=>v&&(
-              <div key={k} style={{background:C.surface2,borderRadius:8,padding:"6px 10px",border:`1px solid ${C.border}`}}>
-                <p style={{fontSize:10,color:C.muted,marginBottom:2}}>{k}</p><p style={{fontSize:13,fontWeight:600}}>{v}</p>
+            <img src={item.imageData} style={{width:52,height:52,objectFit:"contain",borderRadius:8,background:"#fff",padding:3,flexShrink:0}}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                <p style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.label}</p>
+                {item.category&&<span style={{fontSize:10,fontWeight:600,padding:"1px 7px",borderRadius:20,background:C.accentDim,color:C.accent,border:`1px solid ${C.accentBorder}`,whiteSpace:"nowrap",flexShrink:0}}>{item.category}</span>}
               </div>
-            ))}
-          </div>}
+              <p style={{fontSize:11,color:C.green,fontWeight:600}}>🚚 発送完了 — {tsToStr(item.shippedAt)}</p>
+              {item.formData?.memberName&&<p style={{fontSize:11,color:C.muted}}>読み込み: {item.formData.memberName}</p>}
+            </div>
+          </div>
+          {item.formData&&(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,paddingTop:10,borderTop:`1px solid ${C.border}`}}>
+              {[["商品名",item.formData.productName],["個数",item.formData.quantity],["ジャンル",item.formData.genre],["金額",item.formData.amount?`¥${Number(item.formData.amount).toLocaleString()}`:""],["メンバー",item.formData.memberName]].filter(([,v])=>v).map(([k,v])=>(
+                <div key={k} style={{background:C.surface2,borderRadius:8,padding:"6px 10px",border:`1px solid ${C.border}`}}>
+                  <p style={{fontSize:10,color:C.muted,marginBottom:2}}>{k}</p>
+                  <p style={{fontSize:13,fontWeight:600}}>{v}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function QRReadList({ items, user, isMaster, showShipBtn, onShip, onDelete, isShipped }) {
+  const emptyMsg = isShipped ? "発送完了はありません" : "まだ読み込み済みはありません";
+  if (!items.length) return <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:40,textAlign:"center"}}><p style={{color:C.muted}}>{emptyMsg}</p></div>;
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {items.map(item=>(
+        <div key={item.id} style={{background:C.surface,borderRadius:14,border:`1px solid ${isShipped?C.accentBorder:C.greenBorder}`,padding:16}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+            <span style={{fontSize:26}}>{isShipped?"🚚":"✅"}</span>
+            <div style={{flex:1,minWidth:0}}>
+              <p style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.label}</p>
+              {item.category&&<span style={{fontSize:10,background:C.accentDim,color:C.accent,padding:"1px 7px",borderRadius:20,border:`1px solid ${C.accentBorder}`}}>{item.category}</span>}
+              <p style={{fontSize:11,color:isShipped?C.accent:C.green,marginTop:2}}>
+                {isShipped?`🚚 発送完了: ${tsToStr(item.shippedAt)}`:`✅ 読込: ${tsToStr(item.readAt)}`}
+              </p>
+              {item.formData?.memberName&&<p style={{fontSize:11,color:C.muted}}>👤 {item.formData.memberName}</p>}
+            </div>
+            {/* マスターのみ削除ボタン */}
+            {isMaster&&onDelete&&(
+              <button onClick={()=>onDelete(item)} style={{padding:"5px 10px",background:C.redDim,color:C.red,border:`1px solid ${C.redBorder}`,borderRadius:8,fontSize:11,flexShrink:0}}>🗑</button>
+            )}
+          </div>
+          {item.formData&&(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:showShipBtn?12:0}}>
+              {[
+                ["商品名",  item.formData.productName],
+                ["年月日時",item.formData.datetime],
+                ["個数",    item.formData.quantity],
+                ["ジャンル",item.formData.genre],
+                ["金額",    item.formData.amount?`¥${Number(item.formData.amount).toLocaleString()}`:""],
+              ].filter(([,v])=>v).map(([k,v])=>(
+                <div key={k} style={{background:C.surface2,borderRadius:8,padding:"6px 10px",border:`1px solid ${C.border}`}}>
+                  <p style={{fontSize:10,color:C.muted,marginBottom:2}}>{k}</p>
+                  <p style={{fontSize:13,fontWeight:600}}>{v}</p>
+                </div>
+              ))}
+            </div>
+          )}
+          {/* 発送完了ボタン（マスターのみ・読み込み済タブのみ） */}
+          {showShipBtn&&isMaster&&onShip&&(
+            <button
+              type="button"
+              onClick={()=>onShip(item)}
+              style={{width:"100%",padding:"11px",background:`linear-gradient(135deg,${C.accent},#1a4fa0)`,color:"#fff",border:"none",borderRadius:10,fontSize:14,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}
+            >
+              🚚 発送完了にする
+            </button>
+          )}
         </div>
       ))}
     </div>
