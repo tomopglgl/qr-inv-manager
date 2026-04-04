@@ -1,4 +1,4 @@
-// @version 5.2 - 2026-04-05
+// @version 5.3 - 2026-04-05
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -1162,63 +1162,63 @@ function ShippedList({ items }) {
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       {items.map(item=>(
         <div key={item.id} style={{background:C.surface,borderRadius:14,border:`1px solid ${C.greenBorder}`,padding:16}}>
-          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:item.formData?10:0}}>
-            <img src={item.imageData} style={{width:52,height:52,objectFit:"contain",borderRadius:8,background:"#fff",padding:3,flexShrink:0}}/>
+          {/* ヘッダー */}
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+            <img src={item.imageData} style={{width:48,height:48,objectFit:"contain",borderRadius:8,background:"#fff",padding:3,flexShrink:0}}/>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:2}}>
                 <p style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.label}</p>
                 {item.category&&<span style={{fontSize:10,fontWeight:600,padding:"1px 7px",borderRadius:20,background:C.accentDim,color:C.accent,border:`1px solid ${C.accentBorder}`,whiteSpace:"nowrap",flexShrink:0}}>{item.category}</span>}
               </div>
-              <p style={{fontSize:11,color:C.green,fontWeight:600}}>🚚 発送完了 — {tsToStr(item.shippedAt)}</p>
-              {item.formData?.memberName&&<p style={{fontSize:11,color:C.muted}}>読み込み: {item.formData.memberName}</p>}
+              <p style={{fontSize:11,color:C.green,fontWeight:600}}>🚚 発送完了</p>
             </div>
           </div>
-          {item.formData&&(
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,paddingTop:10,borderTop:`1px solid ${C.border}`}}>
-              {[["商品名",item.formData.productName],["個数",item.formData.quantity],["ジャンル",item.formData.genre],["金額",item.formData.amount?`¥${Number(item.formData.amount).toLocaleString()}`:""],["メンバー",item.formData.memberName]].filter(([,v])=>v).map(([k,v])=>(
-                <div key={k} style={{background:C.surface2,borderRadius:8,padding:"6px 10px",border:`1px solid ${C.border}`}}>
-                  <p style={{fontSize:10,color:C.muted,marginBottom:2}}>{k}</p>
-                  <p style={{fontSize:13,fontWeight:600}}>{v}</p>
-                </div>
-              ))}
+
+          {/* 売れた商品画像 */}
+          {item.formData?.soldImage&&(
+            <div style={{marginBottom:12}}>
+              <p style={{fontSize:10,color:C.muted,marginBottom:4}}>売れた商品の画像</p>
+              <img src={item.formData.soldImage} style={{maxWidth:"100%",maxHeight:120,borderRadius:8,objectFit:"contain",background:C.surface2}}/>
             </div>
           )}
-        </div>
-      ))}
-    </div>
-  );
-}
 
-function QRReadList({ items, user, isMaster, showShipBtn, onShip, onDelete, isShipped }) {
-  const emptyMsg = isShipped ? "発送完了はありません" : "まだ読み込み済みはありません";
-  if (!items.length) return <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:40,textAlign:"center"}}><p style={{color:C.muted}}>{emptyMsg}</p></div>;
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      {items.map(item=>(
-        <div key={item.id} style={{background:C.surface,borderRadius:14,border:`1px solid ${isShipped?C.accentBorder:C.greenBorder}`,padding:16}}>
-          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
-            <span style={{fontSize:26}}>{isShipped?"🚚":"✅"}</span>
-            <div style={{flex:1,minWidth:0}}>
-              <p style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.label}</p>
-              {item.category&&<span style={{fontSize:10,background:C.accentDim,color:C.accent,padding:"1px 7px",borderRadius:20,border:`1px solid ${C.accentBorder}`}}>{item.category}</span>}
-              <p style={{fontSize:11,color:isShipped?C.accent:C.green,marginTop:2}}>
-                {isShipped?`🚚 発送完了: ${tsToStr(item.shippedAt)}`:`✅ 読込: ${tsToStr(item.readAt)}`}
-              </p>
-              {item.formData?.memberName&&<p style={{fontSize:11,color:C.muted}}>👤 {item.formData.memberName}</p>}
+          {/* 3つの時間 */}
+          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12,background:C.surface2,borderRadius:10,padding:"10px 12px",border:`1px solid ${C.border}`}}>
+            <p style={{fontSize:10,color:C.muted,fontWeight:700,marginBottom:2}}>タイムライン</p>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:14}}>🛒</span>
+              <div>
+                <p style={{fontSize:10,color:C.muted}}>購入された日時</p>
+                <p style={{fontSize:12,fontWeight:600}}>{item.formData?.datetime||"—"}</p>
+              </div>
             </div>
-            {/* マスターのみ削除ボタン */}
-            {isMaster&&onDelete&&(
-              <button onClick={()=>onDelete(item)} style={{padding:"5px 10px",background:C.redDim,color:C.red,border:`1px solid ${C.redBorder}`,borderRadius:8,fontSize:11,flexShrink:0}}>🗑</button>
-            )}
+            <div style={{width:1,height:12,background:C.border,marginLeft:16}}/>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:14}}>✅</span>
+              <div>
+                <p style={{fontSize:10,color:C.muted}}>読み込み済になった日時</p>
+                <p style={{fontSize:12,fontWeight:600}}>{tsToStr(item.readAt)||"—"}</p>
+              </div>
+            </div>
+            <div style={{width:1,height:12,background:C.border,marginLeft:16}}/>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:14}}>🚚</span>
+              <div>
+                <p style={{fontSize:10,color:C.muted}}>発送完了になった日時</p>
+                <p style={{fontSize:12,fontWeight:600,color:C.green}}>{tsToStr(item.shippedAt)||"—"}</p>
+              </div>
+            </div>
           </div>
+
+          {/* 商品情報 */}
           {item.formData&&(
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:showShipBtn?12:0}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
               {[
                 ["商品名",  item.formData.productName],
-                ["年月日時",item.formData.datetime],
                 ["個数",    item.formData.quantity],
                 ["ジャンル",item.formData.genre],
                 ["金額",    item.formData.amount?`¥${Number(item.formData.amount).toLocaleString()}`:""],
+                ["メンバー",item.formData.memberName],
               ].filter(([,v])=>v).map(([k,v])=>(
                 <div key={k} style={{background:C.surface2,borderRadius:8,padding:"6px 10px",border:`1px solid ${C.border}`}}>
                   <p style={{fontSize:10,color:C.muted,marginBottom:2}}>{k}</p>
@@ -1227,15 +1227,51 @@ function QRReadList({ items, user, isMaster, showShipBtn, onShip, onDelete, isSh
               ))}
             </div>
           )}
-          {/* 発送完了ボタン（マスターのみ・読み込み済タブのみ） */}
-          {showShipBtn&&isMaster&&onShip&&(
-            <button
-              type="button"
-              onClick={()=>onShip(item)}
-              style={{width:"100%",padding:"11px",background:`linear-gradient(135deg,${C.accent},#1a4fa0)`,color:"#fff",border:"none",borderRadius:10,fontSize:14,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}
-            >
-              🚚 発送完了にする
-            </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
+function QRReadList({ items }) {
+  if (!items.length) return (
+    <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:40,textAlign:"center"}}>
+      <p style={{color:C.muted}}>まだ読み込み済みはありません</p>
+    </div>
+  );
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {items.map(item=>(
+        <div key={item.id} style={{background:C.surface,borderRadius:14,border:`1px solid ${C.greenBorder}`,padding:16}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+            <span style={{fontSize:26,flexShrink:0}}>✅</span>
+            <div style={{flex:1}}>
+              <p style={{fontWeight:700,fontSize:14}}>{item.label}</p>
+              <p style={{fontSize:11,color:C.green,fontWeight:600}}>読み込み済: {tsToStr(item.readAt)}</p>
+            </div>
+          </div>
+          {/* 売れた商品画像 */}
+          {item.formData?.soldImage&&(
+            <div style={{marginBottom:10}}>
+              <img src={item.formData.soldImage} style={{maxWidth:"100%",maxHeight:120,borderRadius:8,objectFit:"contain",background:C.surface2}}/>
+            </div>
+          )}
+          {item.formData&&(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+              {[
+                ["商品名",    item.formData.productName],
+                ["売れた日時", item.formData.datetime],
+                ["個数",      item.formData.quantity],
+                ["ジャンル",  item.formData.genre],
+                ["金額",      item.formData.amount?`¥${Number(item.formData.amount).toLocaleString()}`:""],
+              ].filter(([,v])=>v).map(([k,v])=>(
+                <div key={k} style={{background:C.surface2,borderRadius:8,padding:"6px 10px",border:`1px solid ${C.border}`}}>
+                  <p style={{fontSize:10,color:C.muted,marginBottom:2}}>{k}</p>
+                  <p style={{fontSize:13,fontWeight:600}}>{v}</p>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       ))}
@@ -1243,37 +1279,49 @@ function QRReadList({ items, user, isMaster, showShipBtn, onShip, onDelete, isSh
   );
 }
 
+
 function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[] }) {
   const [showQR,    setShowQR]    = useState(false);
   const [zoomQR,    setZoomQR]    = useState(false);
   const [checked,   setChecked]   = useState(false);
   const [selItemId, setSelItemId] = useState("");
-  const [form, setForm] = useState({productName:"",datetime:new Date().toISOString().slice(0,16),quantity:"",genre:"",memberName:user.name,amount:""});
+  const [soldImage, setSoldImage] = useState(null); // 売れた商品画像
+  const [form, setForm] = useState({
+    productName:"",
+    datetime:new Date().toISOString().slice(0,16), // 売れた時間
+    quantity:"",
+    genre:"",
+    memberName:user.name,
+    amount:""
+  });
+  const fileRef = useRef();
 
-  const selInvItem = invItems.find(i=>i.id===selItemId) || null;
+  const selInvItem = invItems.find(i=>i.id===selItemId)||null;
   const shipMethod = selInvItem ? SHIPPING_METHODS.find(m=>m.id===selInvItem.shippingMethodId)||null : null;
 
   function handleItemSelect(id) {
     setSelItemId(id);
     const it = invItems.find(i=>i.id===id);
     if (!it) return;
-    // 直近のマイナス操作数を確認（当日分）
     const today = new Date().toDateString();
     const recentMinus = invHistory.filter(h=>
-      h.itemId===id &&
-      h.userId===user.id &&
-      h.delta<0 &&
+      h.itemId===id && h.userId===user.id && h.delta<0 &&
       (h.createdAt?.toDate?h.createdAt.toDate().toDateString():new Date().toDateString())===today
     );
     const totalMinus = recentMinus.reduce((s,h)=>s+Math.abs(h.delta),0);
-    // 商品のカテゴリをジャンルに自動セット
-    const cat = it.category||"";
-    // GENRESに一致するカテゴリがあればそのまま使用、なければ「その他」
-    const matchedGenre = GENRES.includes(cat) ? cat : (cat ? "その他" : "");
+    const matchedGenre = GENRES.includes(it.category||"") ? it.category : (it.category?"その他":"");
     setForm(p=>({...p, productName:it.name, quantity:totalMinus||1, genre:matchedGenre}));
   }
 
-  const isComplete=form.productName&&form.datetime&&form.quantity&&form.genre&&form.amount;
+  function handleSoldImage(e) {
+    const file = e.target.files[0]; if(!file) return;
+    const r = new FileReader();
+    r.onload = ev => setSoldImage(ev.target.result);
+    r.readAsDataURL(file);
+  }
+
+  // 売れた画像があり全項目入力済みでQR表示可能
+  const isComplete = form.productName&&form.datetime&&form.quantity&&form.genre&&form.amount&&soldImage;
 
   return (
     <div style={{animation:"fadeUp 0.3s ease"}}>
@@ -1291,10 +1339,9 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[] }
             <select value={selItemId} onChange={e=>handleItemSelect(e.target.value)} style={inputS}>
               <option value="">選択しない（手動入力）</option>
               {invItems.map(i=>{
-                const sm = SHIPPING_METHODS.find(m=>m.id===i.shippingMethodId)||null;
-                // QRのカテゴリと発送方法が一致するものだけ選択可
-                const qrCat = item.category||"";
-                const methodMatch = !sm || !qrCat || sm.name===qrCat || !i.shippingMethodId;
+                const sm=SHIPPING_METHODS.find(m=>m.id===i.shippingMethodId)||null;
+                const qrCat=item.category||"";
+                const methodMatch=!sm||!qrCat||sm.name===qrCat||!i.shippingMethodId;
                 return (
                   <option key={i.id} value={i.id} disabled={!methodMatch}>
                     {i.name}（残{i.qty}{i.unit}）{sm?" — "+sm.name:""}
@@ -1303,15 +1350,6 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[] }
                 );
               })}
             </select>
-            {selItemId&&(()=>{
-              const it=invItems.find(i=>i.id===selItemId);
-              const sm=it?SHIPPING_METHODS.find(m=>m.id===it.shippingMethodId):null;
-              const qrCat=item.category||"";
-              if(sm&&qrCat&&sm.name!==qrCat){
-                return <p style={{fontSize:11,color:C.red,marginTop:4}}>⚠️ このQRコードの発送方法（{qrCat}）と商品の発送方法（{sm.name}）が一致しません</p>;
-              }
-              return null;
-            })()}
             {shipMethod&&(
               <div style={{marginTop:6,display:"flex",alignItems:"center",gap:6,padding:"6px 12px",background:shipMethod.color+"18",borderRadius:8,border:"1px solid "+shipMethod.color+"40"}}>
                 <span>{shipMethod.icon}</span>
@@ -1321,9 +1359,47 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[] }
           </div>
         )}
 
-        {[{key:"productName",label:"商品名",type:"text",ph:"例: Tシャツ 白 M"},{key:"datetime",label:"年月日時",type:"datetime-local"},{key:"quantity",label:"個数",type:"number",ph:"例: 3"},{key:"memberName",label:"メンバー名",type:"text"},{key:"amount",label:"金額",type:"number",ph:"例: 5000"}].map(f=>(
-          <Fg key={f.key} label={f.label}><input type={f.type} value={form[f.key]} onChange={e=>setForm(p=>({...p,[f.key]:e.target.value}))} style={inputS} placeholder={f.ph} readOnly={f.key==="memberName"}/></Fg>
+        {/* 売れた商品の画像（必須） */}
+        <div style={{marginBottom:14}}>
+          <label style={labelS}>売れた商品の画像 ★（必須）</label>
+          <div
+            onClick={()=>fileRef.current?.click()}
+            style={{border:`2px dashed ${soldImage?C.greenBorder:C.border}`,borderRadius:12,padding:soldImage?8:24,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",background:soldImage?C.greenDim:C.surface2,minHeight:80,position:"relative"}}
+          >
+            {soldImage
+              ?<img src={soldImage} style={{maxHeight:120,maxWidth:"100%",borderRadius:8,display:"block",margin:"0 auto"}}/>
+              :<div style={{textAlign:"center"}}>
+                <div style={{fontSize:28,marginBottom:4}}>📸</div>
+                <p style={{color:C.muted,fontSize:12}}>売れた商品の画像をタップして追加</p>
+                <p style={{color:C.red,fontSize:11,marginTop:2}}>※ 画像がないとQRコードを表示できません</p>
+              </div>
+            }
+          </div>
+          <input ref={fileRef} type="file" accept="image/*" onChange={handleSoldImage} style={{display:"none"}}/>
+          {soldImage&&<button onClick={()=>setSoldImage(null)} style={{marginTop:6,padding:"4px 12px",background:C.redDim,color:C.red,border:`1px solid ${C.redBorder}`,borderRadius:8,fontSize:11,cursor:"pointer"}}>画像を削除</button>}
+        </div>
+
+        {/* フォーム入力 */}
+        {[
+          {key:"productName",label:"商品名",type:"text",ph:"例: Tシャツ 白 M"},
+          {key:"datetime",label:"売れた年月日時 ★",type:"datetime-local"},
+          {key:"quantity",label:"個数",type:"number",ph:"例: 1"},
+          {key:"memberName",label:"メンバー名",type:"text"},
+          {key:"amount",label:"金額（円）",type:"number",ph:"例: 3000"}
+        ].map(f=>(
+          <Fg key={f.key} label={f.label}>
+            <input
+              type={f.type}
+              value={form[f.key]}
+              onChange={e=>setForm(p=>({...p,[f.key]:e.target.value}))}
+              style={inputS}
+              placeholder={f.ph}
+              readOnly={f.key==="memberName"}
+            />
+          </Fg>
         ))}
+
+        {/* ジャンル */}
         <div style={{marginBottom:16}}>
           <label style={labelS}>ジャンル</label>
           {selInvItem?.category&&!GENRES.includes(selInvItem.category)&&(
@@ -1334,15 +1410,27 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[] }
             {GENRES.map(g=><option key={g}>{g}</option>)}
           </select>
         </div>
-        <button onClick={()=>setShowQR(!showQR)} disabled={!isComplete} style={{padding:"10px 20px",background:isComplete?C.accentDim:C.surface2,color:isComplete?C.accent:C.faint,border:`1px solid ${isComplete?C.accentBorder:C.border}`,borderRadius:10,fontSize:14,fontWeight:700,cursor:isComplete?"pointer":"not-allowed",marginBottom:16}}>
+
+        {/* QR表示ボタン */}
+        {!soldImage&&(
+          <div style={{padding:"10px 14px",background:C.redDim,border:`1px solid ${C.redBorder}`,borderRadius:10,marginBottom:14}}>
+            <p style={{fontSize:12,color:C.red,fontWeight:600}}>📸 先に売れた商品の画像を追加してください</p>
+          </div>
+        )}
+        <button
+          onClick={()=>setShowQR(!showQR)}
+          disabled={!isComplete}
+          style={{padding:"10px 20px",background:isComplete?C.accentDim:C.surface2,color:isComplete?C.accent:C.faint,border:`1px solid ${isComplete?C.accentBorder:C.border}`,borderRadius:10,fontSize:14,fontWeight:700,cursor:isComplete?"pointer":"not-allowed",marginBottom:16}}
+        >
           {showQR?"🙈 QRを隠す":"🔍 QRコードを表示"}
         </button>
+
         {showQR&&isComplete&&(
           <div style={{marginBottom:16}}>
             <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:20,background:"#fff",borderRadius:14,border:`1px solid ${C.border}`}}>
               <img src={item.imageData} style={{width:200,height:200,objectFit:"contain"}}/>
               <p style={{color:"#555",fontSize:12,marginTop:8,marginBottom:10}}>スキャンしてください</p>
-              <button onClick={()=>setZoomQR(true)} style={{padding:"8px 20px",background:"#0d1117",color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
+              <button onClick={()=>setZoomQR(true)} style={{padding:"8px 20px",background:"#0d1117",color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer"}}>
                 🔍 拡大表示
               </button>
             </div>
@@ -1364,17 +1452,28 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[] }
             </div>
           </div>
         )}
-        <div style={{display:"flex",alignItems:"center",gap:10,padding:14,background:C.surface2,borderRadius:10,marginBottom:16,border:`1px solid ${C.border}`,cursor:"pointer"}} onClick={()=>setChecked(!checked)}>
+
+        {/* 読み込みチェック */}
+        <div
+          style={{display:"flex",alignItems:"center",gap:10,padding:14,background:C.surface2,borderRadius:10,marginBottom:16,border:`1px solid ${C.border}`,cursor:"pointer"}}
+          onClick={()=>setChecked(!checked)}
+        >
           <input type="checkbox" checked={checked} onChange={e=>setChecked(e.target.checked)} style={{width:18,height:18,accentColor:C.accent,cursor:"pointer"}}/>
           <label style={{color:C.text,fontSize:14,cursor:"pointer",fontWeight:checked?600:400}}>読み込みチェック完了</label>
         </div>
-        <button onClick={()=>onSave({...form, linkedItemId:selItemId||null})} disabled={!checked||!isComplete} style={{width:"100%",padding:"13px",background:checked&&isComplete?C.green:C.surface2,color:checked&&isComplete?"#fff":C.faint,border:"none",borderRadius:10,fontSize:15,fontWeight:700,cursor:checked&&isComplete?"pointer":"not-allowed",transition:"all 0.2s"}}>
+
+        <button
+          onClick={()=>onSave({...form, soldImage, linkedItemId:selItemId||null})}
+          disabled={!checked||!isComplete}
+          style={{width:"100%",padding:"13px",background:checked&&isComplete?C.green:C.surface2,color:checked&&isComplete?"#fff":C.faint,border:"none",borderRadius:10,fontSize:15,fontWeight:700,cursor:checked&&isComplete?"pointer":"not-allowed",transition:"all 0.2s"}}
+        >
           💾 保存して完了
         </button>
       </div>
     </div>
   );
 }
+
 
 // ═══════════════════════════════════════════════════════════════════
 // 💰 SALES APP
