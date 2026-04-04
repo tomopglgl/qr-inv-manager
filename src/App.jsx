@@ -1,4 +1,4 @@
-// @version 5.4 - 2026-04-05
+// @version 5.5 - 2026-04-05
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -82,6 +82,25 @@ function ShippingBadge({ methodId, size="sm" }) {
   );
 }
 
+
+// ═══════════════════════════════════════════════════════════════════
+// 画像圧縮（Firestore 1MB制限対策）
+// ═══════════════════════════════════════════════════════════════════
+function compressImage(dataUrl, maxWidth=600, quality=0.65) {
+  return new Promise(resolve => {
+    const img = new window.Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let w = img.width, h = img.height;
+      if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // 画像拡大モーダル（共通）
@@ -795,7 +814,12 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
   }
   async function handleSave(formData) {
     const readAt = new Date().toLocaleString("ja-JP",{hour12:false});
-    await updateDoc(doc(db,"qr_items",selectedItem.id),{status:"read",lockedBy:null,formData,readAt:serverTimestamp()});
+    // soldImageを圧縮してFirestoreに保存（1MB制限対策）
+    let savedFormData = {...formData};
+    if (formData.soldImage) {
+      savedFormData.soldImage = await compressImage(formData.soldImage, 500, 0.6);
+    }
+    await updateDoc(doc(db,"qr_items",selectedItem.id),{status:"read",lockedBy:null,formData:savedFormData,readAt:serverTimestamp()});
     await addDoc(collection(db,"qr_log"),{userName:user.name,action:"保存",detail:`保存: ${selectedItem.label} / ${formData.productName}`,createdAt:serverTimestamp()});
     await addNotice("qr_save",`${user.name} が「${selectedItem.label}」を読み込み完了しました`,"master");
     // 自動Excelエクスポート
@@ -1360,7 +1384,10 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[] }
   function handleSoldImage(e) {
     const file = e.target.files[0]; if(!file) return;
     const r = new FileReader();
-    r.onload = ev => setSoldImage(ev.target.result);
+    r.onload = async ev => {
+      // プレビューはそのまま表示、保存時は圧縮する
+      setSoldImage(ev.target.result);
+    };
     r.readAsDataURL(file);
   }
 
