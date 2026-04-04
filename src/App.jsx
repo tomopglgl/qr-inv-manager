@@ -942,6 +942,7 @@ function QRReadList({ items }) {
 
 function QRFormView({ item, user, onSave, onCancel, invItems=[] }) {
   const [showQR,    setShowQR]    = useState(false);
+  const [zoomQR,    setZoomQR]    = useState(false);
   const [checked,   setChecked]   = useState(false);
   const [selItemId, setSelItemId] = useState("");
   const [form, setForm] = useState({productName:"",datetime:new Date().toISOString().slice(0,16),quantity:"",genre:"",memberName:user.name,amount:""});
@@ -1000,9 +1001,28 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[] }) {
           {showQR?"🙈 QRを隠す":"🔍 QRコードを表示"}
         </button>
         {showQR&&isComplete&&(
-          <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:24,background:"#fff",borderRadius:14,marginBottom:16,border:`1px solid ${C.border}`}}>
-            <img src={item.imageData} style={{width:200,height:200,objectFit:"contain"}}/>
-            <p style={{color:"#555",fontSize:12,marginTop:10}}>スキャンしてください</p>
+          <div style={{marginBottom:16}}>
+            <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:20,background:"#fff",borderRadius:14,border:`1px solid ${C.border}`}}>
+              <img src={item.imageData} style={{width:200,height:200,objectFit:"contain"}}/>
+              <p style={{color:"#555",fontSize:12,marginTop:8,marginBottom:10}}>スキャンしてください</p>
+              <button onClick={()=>setZoomQR(true)} style={{padding:"8px 20px",background:"#0d1117",color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
+                🔍 拡大表示
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* QR拡大モーダル */}
+        {zoomQR&&(
+          <div onClick={()=>setZoomQR(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
+            <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:20,padding:28,maxWidth:380,width:"100%",textAlign:"center",boxShadow:"0 24px 64px rgba(0,0,0,0.5)"}}>
+              <p style={{fontSize:14,fontWeight:700,color:"#1a202c",marginBottom:16}}>{item.label}</p>
+              <img src={item.imageData} style={{width:"100%",maxWidth:300,height:"auto",borderRadius:8}}/>
+              <p style={{color:"#555",fontSize:13,marginTop:12,marginBottom:20}}>スキャンしてください</p>
+              <button onClick={()=>setZoomQR(false)} style={{width:"100%",padding:"12px",background:"#0d1117",color:"#fff",border:"none",borderRadius:10,fontSize:15,fontWeight:700,cursor:"pointer"}}>
+                ✕ 閉じる
+              </button>
+            </div>
           </div>
         )}
         <div style={{display:"flex",alignItems:"center",gap:10,padding:14,background:C.surface2,borderRadius:10,marginBottom:16,border:`1px solid ${C.border}`,cursor:"pointer"}} onClick={()=>setChecked(!checked)}>
