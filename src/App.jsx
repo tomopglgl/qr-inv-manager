@@ -1,4 +1,4 @@
-// @version 6.3 - 2026-04-05
+// @version 6.4 - 2026-04-05
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -10,12 +10,12 @@ import {
 // 🔥 Firebase設定 — SETUP.md を読んでここを書き換えてください
 // ═══════════════════════════════════════════════════════════════════
 const firebaseConfig = {
-  apiKey:            "AIzaSyC8_PLU-ULrueIVbmXL67Z1egkP0STKbec",
-  authDomain:        "sku-tool-558af.firebaseapp.com",
-  projectId:         "sku-tool-558af",
-  storageBucket:     "sku-tool-558af.firebasestorage.app",
-  messagingSenderId: "240546265244",
-  appId:             "1:240546265244:web:141424d177069477d89559",
+  apiKey:            "AIzaSyC8_PLU-ULrueIVbmXL67Z1egkP0STKbec"、
+  認証ドメイン:        「sku-tool-558af.firebaseapp.com」、
+  プロジェクトID:         「sku-tool-558af」、
+  ストレージバケット:     「sku-tool-558af.firebasestorage.app」、
+  メッセージ送信者ID:「240546265244」、
+  アプリID:             "1:240546265244:web:141424d177069477d89559"、
 };
 
 const IS_CONFIGURED = !firebaseConfig.apiKey.includes("YOUR");
@@ -874,6 +874,13 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
     await addDoc(collection(db,"qr_log"),{userName:user.name,action:"ロック解除",detail:`強制解除: ${item.label}`,createdAt:serverTimestamp()});
     showToast("ロックを解除しました",C.orange);
   }
+  async function handleShipDelete(item) {
+    await deleteDoc(doc(db,"qr_items",item.id));
+    // sold_imagesも削除
+    try { await deleteDoc(doc(db,"sold_images",item.id)); } catch(e) {}
+    await addDoc(collection(db,"qr_log"),{userName:user.name,action:"発送完了削除",detail:`削除: ${item.label}`,createdAt:serverTimestamp()});
+    showToast("削除しました",C.red);
+  }
   async function handleShip(item) {
     const memberName = item.formData?.memberName||"";
     await updateDoc(doc(db,"qr_items",item.id),{status:"shipped",shippedAt:serverTimestamp()});
@@ -920,7 +927,7 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
       {tab==="upload"&&<QRUploader qrItems={qrItems} user={user} showToast={showToast} isMaster={isMaster} members={members}/>}
       {tab==="unread"&&<QRList items={unreadItems} user={user} isMaster={isMaster} onSelect={handleSelect} onDelete={handleDelete} onRelease={handleRelease} members={members}/>}
       {tab==="read"&&isMaster&&<QRList items={allReadItems} user={user} isMaster={isMaster} readOnly onDelete={handleDelete} onRelease={handleRelease} members={members} onShip={handleShip} soldImageMap={soldImageMap}/>}
-      {tab==="shipped"&&isMaster&&<ShippedList items={shippedItems} soldImageMap={soldImageMap}/>}
+      {tab==="shipped"&&isMaster&&<ShippedList items={shippedItems} soldImageMap={soldImageMap} isMaster={isMaster} members={members} onDelete={handleShipDelete}/>}
       {tab==="myread"&&!isMaster&&<QRReadList items={myReadItems} soldImageMap={soldImageMap}/>}
       {tab==="myshipped"&&!isMaster&&<ShippedList items={myShippedItems} soldImageMap={soldImageMap}/>}
       {tab==="log"&&isMaster&&(
@@ -1244,14 +1251,71 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
   );
 }
 
-function ShippedList({ items, soldImageMap={} }) {
+function ShippedList({ items, soldImageMap={}, isMaster=false, members=[], onDelete=null }) {
+  const [deleteId,    setDeleteId]    = useState(null);
+  const [pwInput,     setPwInput]     = useState("");
+  const [pwError,     setPwError]     = useState("");
+  const [deleting,    setDeleting]    = useState(false);
+
+  // マスターのパスワード確認して削除
+  async function confirmDelete(item) {
+    const master = members.find(m=>m.role==="master");
+    if (!master || pwInput !== master.password) {
+      setPwError("パスワードが違います");
+      return;
+    }
+    setDeleting(true);
+    await onDelete(item);
+    setDeleteId(null);
+    setPwInput("");
+    setPwError("");
+    setDeleting(false);
+  }
+
   if (!items.length) return (
     <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:40,textAlign:"center"}}>
       <p style={{color:C.muted}}>発送完了のQRコードはありません</p>
     </div>
   );
+
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {/* パスワード確認モーダル */}
+      {deleteId&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:20,padding:24,width:"100%",maxWidth:380,border:`1px solid ${C.redBorder}`,boxShadow:"0 24px 64px rgba(0,0,0,0.6)"}}>
+            <h3 style={{fontSize:16,fontWeight:700,marginBottom:8,color:C.red}}>🗑 発送完了データを削除</h3>
+            <p style={{fontSize:13,color:C.muted,marginBottom:16}}>削除するにはマスターのパスワードを入力してください。</p>
+            <div style={{marginBottom:8}}>
+              <label style={labelS}>マスターパスワード</label>
+              <input
+                type="password"
+                value={pwInput}
+                onChange={e=>{setPwInput(e.target.value);setPwError("");}}
+                onKeyDown={e=>e.key==="Enter"&&confirmDelete(items.find(i=>i.id===deleteId))}
+                style={inputS}
+                placeholder="パスワードを入力"
+                autoFocus
+              />
+              {pwError&&<p style={{fontSize:12,color:C.red,marginTop:4}}>{pwError}</p>}
+            </div>
+            <div style={{display:"flex",gap:10,marginTop:16}}>
+              <button
+                type="button"
+                onClick={()=>{setDeleteId(null);setPwInput("");setPwError("");}}
+                style={{flex:1,padding:"11px",background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,fontSize:14,color:C.muted,cursor:"pointer"}}
+              >キャンセル</button>
+              <button
+                type="button"
+                onClick={()=>confirmDelete(items.find(i=>i.id===deleteId))}
+                disabled={!pwInput||deleting}
+                style={{flex:1,padding:"11px",background:pwInput?C.red:C.surface2,color:pwInput?"#fff":C.faint,border:"none",borderRadius:10,fontSize:14,fontWeight:700,cursor:pwInput?"pointer":"not-allowed"}}
+              >{deleting?"削除中...":"削除する"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {items.map(item=>(
         <div key={item.id} style={{background:C.surface,borderRadius:14,border:`1px solid ${C.greenBorder}`,padding:16}}>
           {/* ヘッダー */}
@@ -1264,9 +1328,17 @@ function ShippedList({ items, soldImageMap={} }) {
               </div>
               <p style={{fontSize:11,color:C.green,fontWeight:600}}>🚚 発送完了</p>
             </div>
+            {/* 削除ボタン（マスターのみ） */}
+            {isMaster&&onDelete&&(
+              <button
+                type="button"
+                onClick={()=>{setDeleteId(item.id);setPwInput("");setPwError("");}}
+                style={{padding:"6px 12px",background:C.redDim,color:C.red,border:`1px solid ${C.redBorder}`,borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0}}
+              >🗑 削除</button>
+            )}
           </div>
 
-          {/* 売れた商品画像（sold_imagesコレクションから） */}
+          {/* 売れた商品画像 */}
           {soldImageMap[item.id]&&(
             <div style={{marginBottom:12}}>
               <p style={{fontSize:10,color:C.muted,marginBottom:4}}>売れた商品の画像（タップで拡大）</p>
@@ -1282,9 +1354,9 @@ function ShippedList({ items, soldImageMap={} }) {
           <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12,background:C.surface2,borderRadius:10,padding:"10px 12px",border:`1px solid ${C.border}`}}>
             <p style={{fontSize:10,color:C.muted,fontWeight:700,marginBottom:2}}>タイムライン</p>
             {[
-              {icon:"🛒", label:"購入された日時",       val:item.formData?.datetime||"—", color:C.text},
-              {icon:"✅", label:"読み込み済になった日時", val:tsToStr(item.readAt)||"—",   color:C.accent},
-              {icon:"🚚", label:"発送完了になった日時",   val:tsToStr(item.shippedAt)||"—",color:C.green},
+              {icon:"🛒",label:"購入された日時",       val:item.formData?.datetime||"—",  color:C.text},
+              {icon:"✅",label:"読み込み済になった日時", val:tsToStr(item.readAt)||"—",     color:C.accent},
+              {icon:"🚚",label:"発送完了になった日時",   val:tsToStr(item.shippedAt)||"—",  color:C.green},
             ].map((t,i,arr)=>(
               <div key={t.icon}>
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
