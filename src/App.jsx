@@ -1,4 +1,4 @@
-// @version 6.4 - 2026-04-05
+// @version 7.0 - 2026-04-23-fix
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -10,12 +10,12 @@ import {
 // 🔥 Firebase設定 — SETUP.md を読んでここを書き換えてください
 // ═══════════════════════════════════════════════════════════════════
 const firebaseConfig = {
-  apiKey:            "AIzaSyC8_PLU-ULrueIVbmXL67Z1egkP0STKbec"、
-  認証ドメイン:        「sku-tool-558af.firebaseapp.com」、
-  プロジェクトID:         「sku-tool-558af」、
-  ストレージバケット:     「sku-tool-558af.firebasestorage.app」、
-  メッセージ送信者ID:「240546265244」、
-  アプリID:             "1:240546265244:web:141424d177069477d89559"、
+  apiKey:            "AIzaSyC8_PLU-ULrueIVbmXL67Z1egkP0STKbec",
+  authDomain:        "sku-tool-558af.firebaseapp.com",
+  projectId:         "sku-tool-558af",
+  storageBucket:     "sku-tool-558af.firebasestorage.app",
+  messagingSenderId: "240546265244",
+  appId:             "1:240546265244:web:141424d177069477d89559",
 };
 
 const IS_CONFIGURED = !firebaseConfig.apiKey.includes("YOUR");
