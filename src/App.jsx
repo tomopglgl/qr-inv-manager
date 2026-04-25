@@ -1,4 +1,4 @@
-// @version 7.2 - 2026-04-23
+// @version 7.3 - 2026-04-23
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -1092,7 +1092,7 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[], invItems=[
 
         {/* カテゴリ */}
         <div style={{marginBottom:14,position:"relative"}}>
-          <label style={{...labelS,color:errors.category?C.red:C.muted}}>カテゴリ ★</label>
+          <label style={{...labelS,color:errors.category?C.red:C.muted}}>{isMaster?"カテゴリ":"発送方法"} ★</label>
           <input value={catInput} onChange={e=>{setCatInput(e.target.value);setShowCats(true);setErrors(p=>({...p,category:""}));}}
             onFocus={()=>setShowCats(true)} onBlur={()=>setTimeout(()=>setShowCats(false),160)}
             style={{...inputS,borderColor:errors.category?C.red:C.border}} placeholder="例: ゆうパケットプラス"/>
@@ -1108,7 +1108,7 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[], invItems=[
               </button>
             ))}
           </div>
-          {errors.category&&<p style={{fontSize:11,color:C.red,marginTop:3}}>⚠️ {errors.category}</p>}
+          {errors.category&&<p style={{fontSize:11,color:C.red,marginTop:3}}>⚠️ {isMaster?"カテゴリ":"発送方法"}を選択してください</p>}
           {!isMaster&&<p style={{fontSize:11,color:C.muted,marginTop:4}}>※ ネコポス・ゆうパケットプラス・60cm発送のみ登録できます</p>}
         </div>
 
@@ -1151,12 +1151,13 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[], invItems=[
               </div>
             </div>
             <div>
-              <label style={{...labelS,color:errors.genre?C.red:C.muted}}>ジャンル ★</label>
+              <label style={{...labelS,color:errors.genre?C.red:C.muted}}>カテゴリ ★</label>
               <select value={formData.genre} onChange={e=>{setFormData(p=>({...p,genre:e.target.value}));setErrors(p=>({...p,genre:""}));}} style={{...inputS,borderColor:errors.genre?C.red:C.border}}>
                 <option value="">選択してください</option>
-                {GENRES.map(g=><option key={g}>{g}</option>)}
+                {[...new Set(invItems.map(i=>i.category).filter(Boolean))].sort().map(c=><option key={c} value={c}>{c}</option>)}
+                {invItems.length===0&&GENRES.map(g=><option key={g}>{g}</option>)}
               </select>
-              {errors.genre&&<p style={{fontSize:11,color:C.red,marginTop:3}}>⚠️ {errors.genre}</p>}
+              {errors.genre&&<p style={{fontSize:11,color:C.red,marginTop:3}}>⚠️ カテゴリを選択してください</p>}
             </div>
           </div>
         )}
@@ -1329,7 +1330,7 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
             </div>
             {item.formData&&(
               <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.border}`,display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-                {[["商品名",item.formData.productName],["個数",item.formData.quantity],["ジャンル",item.formData.genre],["金額",item.formData.amount?`¥${Number(item.formData.amount).toLocaleString()}`:""]].map(([k,v])=>v&&(
+                {[["商品名",item.formData.productName],["個数",item.formData.quantity],["カテゴリ",item.formData.genre],["金額",item.formData.amount?`¥${Number(item.formData.amount).toLocaleString()}`:""]].map(([k,v])=>v&&(
                   <div key={k} style={{background:C.surface2,borderRadius:8,padding:"6px 10px",border:`1px solid ${C.border}`}}>
                     <p style={{fontSize:10,color:C.muted,marginBottom:2}}>{k}</p><p style={{fontSize:13,fontWeight:600}}>{v}</p>
                   </div>
@@ -1470,7 +1471,7 @@ function ShippedList({ items, soldImageMap={}, isMaster=false, members=[], onDel
               {[
                 ["商品名",  item.formData.productName],
                 ["個数",    item.formData.quantity],
-                ["ジャンル",item.formData.genre],
+                ["カテゴリ",item.formData.genre],
                 ["金額",    item.formData.amount?`¥${Number(item.formData.amount).toLocaleString()}`:""],
                 ["メンバー",item.formData.memberName],
               ].filter(([,v])=>v).map(([k,v])=>(
@@ -1524,7 +1525,7 @@ function QRReadList({ items, soldImageMap={} }) {
                 ["商品名",    item.formData.productName],
                 ["売れた日時",item.formData.datetime],
                 ["個数",      item.formData.quantity],
-                ["ジャンル",  item.formData.genre],
+                ["カテゴリ",  item.formData.genre],
                 ["金額",      item.formData.amount?`¥${Number(item.formData.amount).toLocaleString()}`:""],
               ].filter(([,v])=>v).map(([k,v])=>(
                 <div key={k} style={{background:C.surface2,borderRadius:8,padding:"6px 10px",border:`1px solid ${C.border}`}}>
@@ -1621,7 +1622,7 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[], 
                 ["商品名",      prefilled.productName],
                 ["売れた日時",  prefilled.datetime],
                 ["個数",        prefilled.quantity],
-                ["ジャンル",    prefilled.genre],
+                ["カテゴリ",    prefilled.genre],
                 ["金額",        prefilled.amount?`¥${Number(prefilled.amount).toLocaleString()}`:""],
                 ["メンバー名",  prefilled.memberName],
               ].filter(([,v])=>v).map(([k,v])=>(
@@ -1670,7 +1671,7 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[], 
               </Fg>
             ))}
             <div style={{marginBottom:12}}>
-              <label style={labelS}>ジャンル</label>
+              <label style={labelS}>カテゴリ</label>
               <select value={form.genre} onChange={e=>setForm(p=>({...p,genre:e.target.value}))} style={inputS}>
                 <option value="">選択してください</option>
                 {GENRES.map(g=><option key={g}>{g}</option>)}
@@ -1705,7 +1706,7 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[], 
                     ["商品名",    prefilled.productName],
                     ["売れた日時",prefilled.datetime],
                     ["個数",      prefilled.quantity],
-                    ["ジャンル",  prefilled.genre],
+                    ["カテゴリ",  prefilled.genre],
                     ["金額",      prefilled.amount?`¥${Number(prefilled.amount).toLocaleString()}`:""],
                   ].filter(([,v])=>v).map(([k,v])=>(
                     <div key={k} style={{background:C.surface2,borderRadius:8,padding:"8px 10px",border:`1px solid ${C.border}`}}>
