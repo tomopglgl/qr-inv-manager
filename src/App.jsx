@@ -1,4 +1,4 @@
-// @version 7.0 - 2026-04-23
+// @version 7.1 - 2026-04-23
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -1173,7 +1173,7 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[] }) {
                 <p style={{fontSize:10,color:C.muted}}>{tsToStr(item.uploadedAt)}</p>
               </div>
               <span style={{fontSize:11,fontWeight:600,padding:"2px 9px",borderRadius:20,background:item.status==="read"?C.greenDim:item.status==="shipped"?C.purpleDim:C.surface,color:item.status==="read"?C.green:item.status==="shipped"?C.purple:C.muted,border:`1px solid ${item.status==="read"?C.greenBorder:item.status==="shipped"?C.purpleBorder:C.border}`,whiteSpace:"nowrap"}}>
-                {item.status==="read"?"✅ 済":item.status==="shipped"?"🚚 発送":⏳ 未"}
+                {item.status==="read"?"✅ 済":item.status==="shipped"?"🚚 発送":"⏳ 未"}
               </span>
             </div>
           ))}
