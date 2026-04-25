@@ -1,4 +1,4 @@
-// @version 7.0 - 2026-04-23-fix
+// @version 7.0 - 2026-04-23
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -894,7 +894,7 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
     showToast("発送完了にしました 🚚",C.green);
   }
 
-  if (selectedItem) return <QRFormView item={selectedItem} user={user} onSave={handleSave} onCancel={handleCancel} invItems={myInvItems} invHistory={invHist}/>;
+  if (selectedItem) return <QRFormView item={selectedItem} user={user} onSave={handleSave} onCancel={handleCancel} invItems={myInvItems} invHistory={invHist} isMaster={isMaster}/>;
 
   const shippedItems = visibleQRs.filter(i=>i.status==="shipped");
   const masterTabs=[
@@ -951,127 +951,211 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
 }
 
 function QRUploader({ qrItems, user, showToast, isMaster, members=[] }) {
-  const [label,       setLabel]      = useState("");
-  const [catInput,    setCatInput]   = useState("");
-  const [showCats,    setShowCats]   = useState(false);
-  const [preview,     setPreview]    = useState(null);
-  const [imgData,     setImgData]    = useState(null);
-  const [uploading,   setUploading]  = useState(false);
-  const [assignedTo,  setAssignedTo] = useState("all"); // "all" or メンバー名
-  const fileRef = useRef();
+  const [label,     setLabel]    = useState("");
+  const [catInput,  setCatInput] = useState("");
+  const [showCats,  setShowCats] = useState(false);
+  const [preview,   setPreview]  = useState(null);
+  const [imgData,   setImgData]  = useState(null);
+  const [uploading, setUploading]= useState(false);
+  // メンバー用追加フォーム
+  const [soldImg,   setSoldImg]  = useState(null);
+  const [soldPreview,setSoldPrev]= useState(null);
+  const [formData,  setFormData] = useState({productName:"",datetime:new Date().toISOString().slice(0,16),quantity:"",amount:"",genre:""});
+  const [errors,    setErrors]   = useState({});
+  const fileRef     = useRef();
+  const soldFileRef = useRef();
 
-  // メンバーは指定発送方法のみ表示
   const availableMethods = isMaster
     ? SHIPPING_METHODS
     : SHIPPING_METHODS.filter(m=>MEMBER_SHIPPING_METHODS.includes(m.id));
 
-  // 既存QRから取得したカテゴリ一覧
   const existingCats = [...new Set(qrItems.map(i=>i.category).filter(Boolean))].sort();
   const filteredCats = existingCats.filter(c=>c.toLowerCase().includes(catInput.toLowerCase())&&c!==catInput);
-  const memberList = members.filter(m=>m.role==="member");
 
-  function handleFile(e) {
-    const file=e.target.files[0]; if(!file)return;
+  function handleQRFile(e) {
+    const file=e.target.files[0]; if(!file) return;
     const r=new FileReader();
     r.onload=ev=>{setPreview(ev.target.result);setImgData(ev.target.result);};
     r.readAsDataURL(file);
   }
+  async function handleSoldFile(e) {
+    const file=e.target.files[0]; if(!file) return;
+    const r=new FileReader();
+    r.onload=ev=>{setSoldPrev(ev.target.result);setSoldImg(ev.target.result);};
+    r.readAsDataURL(file);
+  }
+
+  function validate() {
+    if (isMaster) return true; // マスターはバリデーションなし
+    const errs = {};
+    if (!imgData)                  errs.qrImage    = "QR画像をアップロードしてください";
+    if (!soldImg)                  errs.soldImage   = "売れた商品の画像をアップロードしてください";
+    if (!formData.productName.trim()) errs.productName = "商品名を入力してください";
+    if (!formData.datetime)        errs.datetime   = "売れた年月日時を入力してください";
+    if (!formData.quantity)        errs.quantity   = "個数を入力してください";
+    if (!formData.amount)          errs.amount     = "金額を入力してください";
+    if (!formData.genre)           errs.genre      = "ジャンルを選択してください";
+    if (!catInput.trim())          errs.category   = "カテゴリを選択してください";
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  }
 
   async function upload() {
-    if (!imgData){showToast("QR画像をアップロードしてください",C.red);return;}
+    if (!validate()) {
+      showToast("入力されていない項目があります", C.red);
+      return;
+    }
     setUploading(true);
     const lbl = label||`QR-${Date.now()}`;
     const cat = catInput.trim()||"未分類";
-    await addDoc(collection(db,"qr_items"),{
+
+    // 売れた商品画像を圧縮してsold_imagesに保存（メンバーのみ）
+    let docRef;
+    const qrDocData = {
       label:lbl, category:cat,
       imageData:imgData, status:"unread",
       lockedBy:null, formData:null,
       linkedItemId:null,
       registeredBy:user.name,
       registeredRole:user.role,
-      assignedTo: assignedTo==="all" ? null : assignedTo,
+      // メンバーの場合は事前入力データを保存
+      prefilledData: !isMaster ? {
+        productName: formData.productName,
+        datetime:    formData.datetime,
+        quantity:    formData.quantity,
+        amount:      formData.amount,
+        genre:       formData.genre,
+        memberName:  user.name,
+      } : null,
       uploadedAt:serverTimestamp()
-    });
+    };
+
+    const ref = await addDoc(collection(db,"qr_items"), qrDocData);
+
+    // メンバーの場合、売れた商品画像をsold_imagesに保存
+    if (!isMaster && soldImg) {
+      const compressed = await compressImage(soldImg, 500, 0.6);
+      await setDoc(doc(db,"sold_images",ref.id), {
+        imageData: compressed,
+        memberName: user.name,
+        createdAt: serverTimestamp()
+      });
+    }
+
     await addDoc(collection(db,"qr_log"),{userName:user.name,action:"QR登録",detail:`登録: ${lbl} [${cat}]`,createdAt:serverTimestamp()});
     showToast(`「${lbl}」を登録しました`);
+
+    // フォームリセット
     setLabel(""); setCatInput(""); setPreview(null); setImgData(null);
+    setSoldImg(null); setSoldPrev(null);
+    setFormData({productName:"",datetime:new Date().toISOString().slice(0,16),quantity:"",amount:"",genre:""});
+    setErrors({});
     if(fileRef.current) fileRef.current.value="";
+    if(soldFileRef.current) soldFileRef.current.value="";
     setUploading(false);
   }
 
   return (
     <div>
       <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:20,marginBottom:12}}>
-        <h3 style={{fontSize:15,fontWeight:700,marginBottom:14}}>QRコード登録</h3>
+        <h3 style={{fontSize:15,fontWeight:700,marginBottom:14}}>
+          {isMaster?"QRコード登録":"QRコード登録（情報入力必須）"}
+        </h3>
+        {!isMaster&&<div style={{background:C.accentDim,border:`1px solid ${C.accentBorder}`,borderRadius:10,padding:"8px 12px",marginBottom:14}}>
+          <p style={{fontSize:12,color:C.accent,fontWeight:600}}>📝 登録時に売れた商品の情報も入力してください</p>
+        </div>}
 
-        {/* 画像アップロード */}
-        <div style={{border:`2px dashed ${C.border}`,borderRadius:12,padding:32,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",marginBottom:14,minHeight:140,background:C.surface2}}
-          onClick={()=>fileRef.current?.click()}
-          onDragOver={e=>e.preventDefault()}
-          onDrop={e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f){const ev={target:{files:[f]}};handleFile(ev);}}}>
-          {preview
-            ?<img src={preview} style={{maxHeight:160,maxWidth:"100%",borderRadius:8}}/>
-            :<div style={{textAlign:"center"}}><div style={{fontSize:36,marginBottom:8}}>📷</div><p style={{color:C.muted,fontSize:13}}>クリックまたはドラッグでアップロード</p></div>
-          }
-        </div>
-        <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{display:"none"}}/>
-
-        {/* ラベル名 */}
+        {/* QR画像アップロード */}
         <div style={{marginBottom:14}}>
-          <label style={labelS}>ラベル名</label>
-          <input value={label} onChange={e=>setLabel(e.target.value)} style={inputS} placeholder="例: 荷物001（空白の場合は自動生成）"/>
+          <label style={{...labelS,color:errors.qrImage?C.red:C.muted}}>QRコード画像 ★</label>
+          <div onClick={()=>fileRef.current?.click()} style={{border:`2px dashed ${errors.qrImage?C.red:C.border}`,borderRadius:12,padding:preview?8:24,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",minHeight:80,background:C.surface2}}
+            onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)handleQRFile({target:{files:[f]}});}}>
+            {preview?<img src={preview} style={{maxHeight:120,maxWidth:"100%",borderRadius:8}}/>
+              :<div style={{textAlign:"center"}}><div style={{fontSize:32,marginBottom:4}}>📷</div><p style={{color:C.muted,fontSize:12}}>QRコード画像をアップロード</p></div>}
+          </div>
+          <input ref={fileRef} type="file" accept="image/*" onChange={handleQRFile} style={{display:"none"}}/>
+          {errors.qrImage&&<p style={{fontSize:11,color:C.red,marginTop:3}}>⚠️ {errors.qrImage}</p>}
         </div>
 
-        {/* メンバー指定（マスターのみ） */}
-        {isMaster&&memberList.length>0&&(
+        {/* メンバーのみ: 売れた商品画像 */}
+        {!isMaster&&(
           <div style={{marginBottom:14}}>
-            <label style={labelS}>使用メンバー指定</label>
-            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:4}}>
-              <button type="button" onClick={()=>setAssignedTo("all")} style={{padding:"5px 14px",fontSize:12,border:`1px solid ${assignedTo==="all"?C.accent:C.border}`,borderRadius:20,background:assignedTo==="all"?C.accentDim:C.surface2,color:assignedTo==="all"?C.accent:C.muted,fontWeight:assignedTo==="all"?700:400}}>
-                全員
-              </button>
-              {memberList.map(m=>(
-                <button type="button" key={m.id} onClick={()=>setAssignedTo(m.name)} style={{padding:"5px 14px",fontSize:12,border:`1px solid ${assignedTo===m.name?C.green:C.border}`,borderRadius:20,background:assignedTo===m.name?C.greenDim:C.surface2,color:assignedTo===m.name?C.green:C.muted,fontWeight:assignedTo===m.name?700:400}}>
-                  👤 {m.name}
-                </button>
-              ))}
+            <label style={{...labelS,color:errors.soldImage?C.red:C.muted}}>売れた商品の画像 ★</label>
+            <div onClick={()=>soldFileRef.current?.click()} style={{border:`2px dashed ${errors.soldImage?C.red:C.border}`,borderRadius:12,padding:soldPreview?8:24,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",minHeight:80,background:soldPreview?C.greenDim:C.surface2}}>
+              {soldPreview?<img src={soldPreview} style={{maxHeight:120,maxWidth:"100%",borderRadius:8}}/>
+                :<div style={{textAlign:"center"}}><div style={{fontSize:28,marginBottom:4}}>📸</div><p style={{color:C.muted,fontSize:12}}>売れた商品の画像をアップロード</p></div>}
             </div>
-            {assignedTo!=="all"&&<p style={{fontSize:11,color:C.green,marginTop:4}}>✓ {assignedTo} 専用のQRコードとして登録されます</p>}
+            <input ref={soldFileRef} type="file" accept="image/*" onChange={handleSoldFile} style={{display:"none"}}/>
+            {errors.soldImage&&<p style={{fontSize:11,color:C.red,marginTop:3}}>⚠️ {errors.soldImage}</p>}
           </div>
         )}
 
         {/* カテゴリ */}
-        <div style={{marginBottom:16,position:"relative"}}>
-          <label style={labelS}>カテゴリ ★</label>
-          <input
-            value={catInput}
-            onChange={e=>{setCatInput(e.target.value);setShowCats(true);}}
-            onFocus={()=>setShowCats(true)}
-            onBlur={()=>setTimeout(()=>setShowCats(false),160)}
-            style={inputS}
-            placeholder="例: ゆうパケットポスト、ネコポス"
-          />
-          {/* サジェスト */}
+        <div style={{marginBottom:14,position:"relative"}}>
+          <label style={{...labelS,color:errors.category?C.red:C.muted}}>カテゴリ ★</label>
+          <input value={catInput} onChange={e=>{setCatInput(e.target.value);setShowCats(true);setErrors(p=>({...p,category:""}));}}
+            onFocus={()=>setShowCats(true)} onBlur={()=>setTimeout(()=>setShowCats(false),160)}
+            style={{...inputS,borderColor:errors.category?C.red:C.border}} placeholder="例: ゆうパケットプラス"/>
           {showCats&&filteredCats.length>0&&(
             <div style={{position:"absolute",top:"100%",left:0,right:0,background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,zIndex:100,boxShadow:"0 8px 24px rgba(0,0,0,0.4)",overflow:"hidden"}}>
-              {filteredCats.map(c=>(
-                <div key={c} onMouseDown={()=>{setCatInput(c);setShowCats(false);}} style={{padding:"9px 14px",cursor:"pointer",fontSize:13,borderBottom:`1px solid ${C.border}`,color:C.text}} onMouseEnter={e=>e.currentTarget.style.background=C.surface2} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>{c}</div>
-              ))}
+              {filteredCats.map(c=><div key={c} onMouseDown={()=>{setCatInput(c);setShowCats(false);}} style={{padding:"9px 14px",cursor:"pointer",fontSize:13,borderBottom:`1px solid ${C.border}`,color:C.text}} onMouseEnter={e=>e.currentTarget.style.background=C.surface2} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>{c}</div>)}
             </div>
           )}
-          {/* 発送方法クイック選択 */}
-          <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:8}}>
+          <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:6}}>
             {availableMethods.map(m=>(
-              <button key={m.id} onClick={()=>setCatInput(m.name)} style={{padding:"4px 11px",fontSize:11,border:`1px solid ${catInput===m.name?m.color:C.border}`,borderRadius:20,background:catInput===m.name?m.color+"20":C.surface2,color:catInput===m.name?m.color:C.muted,display:"flex",alignItems:"center",gap:4,fontWeight:catInput===m.name?700:400}}>
+              <button key={m.id} type="button" onClick={()=>{setCatInput(m.name);setErrors(p=>({...p,category:""}));}} style={{padding:"4px 11px",fontSize:11,border:`1px solid ${catInput===m.name?m.color:C.border}`,borderRadius:20,background:catInput===m.name?m.color+"20":C.surface2,color:catInput===m.name?m.color:C.muted,display:"flex",alignItems:"center",gap:4,fontWeight:catInput===m.name?700:400}}>
                 <span>{m.icon}</span>{m.name}
               </button>
             ))}
           </div>
-          {!isMaster&&<p style={{fontSize:11,color:C.muted,marginTop:6}}>※ メンバーはネコポス・ゆうパケットプラス・60cm発送のみ登録できます</p>}
-
+          {errors.category&&<p style={{fontSize:11,color:C.red,marginTop:3}}>⚠️ {errors.category}</p>}
+          {!isMaster&&<p style={{fontSize:11,color:C.muted,marginTop:4}}>※ ネコポス・ゆうパケットプラス・60cm発送のみ登録できます</p>}
         </div>
 
-        <button onClick={upload} disabled={!imgData||uploading} style={{padding:"11px 24px",background:imgData?C.accent:C.surface2,color:imgData?"#fff":C.faint,border:"none",borderRadius:10,fontSize:14,fontWeight:700,cursor:imgData?"pointer":"not-allowed"}}>
+        {/* ラベル名 */}
+        <div style={{marginBottom:14}}>
+          <label style={labelS}>ラベル名（任意）</label>
+          <input value={label} onChange={e=>setLabel(e.target.value)} style={inputS} placeholder="例: 荷物001（空白の場合は自動生成）"/>
+        </div>
+
+        {/* メンバーのみ: 商品情報 */}
+        {!isMaster&&(
+          <div style={{background:C.surface2,borderRadius:12,padding:14,border:`1px solid ${C.border}`,marginBottom:14}}>
+            <p style={{fontSize:13,fontWeight:700,marginBottom:12}}>📋 売れた商品の情報</p>
+            <div style={{marginBottom:10}}>
+              <label style={{...labelS,color:errors.productName?C.red:C.muted}}>商品名 ★</label>
+              <input value={formData.productName} onChange={e=>{setFormData(p=>({...p,productName:e.target.value}));setErrors(p=>({...p,productName:""}));}} style={{...inputS,borderColor:errors.productName?C.red:C.border}} placeholder="例: Tシャツ 白 M"/>
+              {errors.productName&&<p style={{fontSize:11,color:C.red,marginTop:3}}>⚠️ {errors.productName}</p>}
+            </div>
+            <div style={{marginBottom:10}}>
+              <label style={{...labelS,color:errors.datetime?C.red:C.muted}}>売れた年月日時 ★</label>
+              <input type="datetime-local" value={formData.datetime} onChange={e=>{setFormData(p=>({...p,datetime:e.target.value}));setErrors(p=>({...p,datetime:""}));}} style={{...inputS,borderColor:errors.datetime?C.red:C.border}}/>
+              {errors.datetime&&<p style={{fontSize:11,color:C.red,marginTop:3}}>⚠️ {errors.datetime}</p>}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+              <div>
+                <label style={{...labelS,color:errors.quantity?C.red:C.muted}}>個数 ★</label>
+                <input type="number" value={formData.quantity} onChange={e=>{setFormData(p=>({...p,quantity:e.target.value}));setErrors(p=>({...p,quantity:""}));}} style={{...inputS,borderColor:errors.quantity?C.red:C.border}} placeholder="例: 1"/>
+                {errors.quantity&&<p style={{fontSize:11,color:C.red,marginTop:3}}>⚠️ {errors.quantity}</p>}
+              </div>
+              <div>
+                <label style={{...labelS,color:errors.amount?C.red:C.muted}}>金額（円） ★</label>
+                <input type="number" value={formData.amount} onChange={e=>{setFormData(p=>({...p,amount:e.target.value}));setErrors(p=>({...p,amount:""}));}} style={{...inputS,borderColor:errors.amount?C.red:C.border}} placeholder="例: 3000"/>
+                {errors.amount&&<p style={{fontSize:11,color:C.red,marginTop:3}}>⚠️ {errors.amount}</p>}
+              </div>
+            </div>
+            <div>
+              <label style={{...labelS,color:errors.genre?C.red:C.muted}}>ジャンル ★</label>
+              <select value={formData.genre} onChange={e=>{setFormData(p=>({...p,genre:e.target.value}));setErrors(p=>({...p,genre:""}));}} style={{...inputS,borderColor:errors.genre?C.red:C.border}}>
+                <option value="">選択してください</option>
+                {GENRES.map(g=><option key={g}>{g}</option>)}
+              </select>
+              {errors.genre&&<p style={{fontSize:11,color:C.red,marginTop:3}}>⚠️ {errors.genre}</p>}
+            </div>
+          </div>
+        )}
+
+        <button type="button" onClick={upload} disabled={!imgData||uploading} style={{padding:"11px 24px",background:imgData?C.accent:C.surface2,color:imgData?"#fff":C.faint,border:"none",borderRadius:10,fontSize:14,fontWeight:700,cursor:imgData?"pointer":"not-allowed"}}>
           {uploading?"登録中...":"📦 登録する"}
         </button>
       </div>
@@ -1088,7 +1172,9 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[] }) {
                 {item.category&&<p style={{fontSize:10,color:C.accent}}>{item.category}</p>}
                 <p style={{fontSize:10,color:C.muted}}>{tsToStr(item.uploadedAt)}</p>
               </div>
-              <span style={{fontSize:11,fontWeight:600,padding:"2px 9px",borderRadius:20,background:item.status==="read"?C.greenDim:C.surface,color:item.status==="read"?C.green:C.muted,border:`1px solid ${item.status==="read"?C.greenBorder:C.border}`,whiteSpace:"nowrap"}}>{item.status==="read"?"✅ 済":"⏳ 未"}</span>
+              <span style={{fontSize:11,fontWeight:600,padding:"2px 9px",borderRadius:20,background:item.status==="read"?C.greenDim:item.status==="shipped"?C.purpleDim:C.surface,color:item.status==="read"?C.green:item.status==="shipped"?C.purple:C.muted,border:`1px solid ${item.status==="read"?C.greenBorder:item.status==="shipped"?C.purpleBorder:C.border}`,whiteSpace:"nowrap"}}>
+                {item.status==="read"?"✅ 済":item.status==="shipped"?"🚚 発送":⏳ 未"}
+              </span>
             </div>
           ))}
         </div>
@@ -1096,6 +1182,7 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[] }) {
     </div>
   );
 }
+
 
 function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly=false, members=[], onShip=null, soldImageMap={} }) {
   const [filterCat,    setFilterCat]    = useState("すべて");
@@ -1448,18 +1535,20 @@ function QRReadList({ items, soldImageMap={} }) {
 }
 
 
-function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[] }) {
+function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[], isMaster=false }) {
   const [showQR,    setShowQR]    = useState(false);
   const [checked,   setChecked]   = useState(false);
   const [selItemId, setSelItemId] = useState("");
-  const [soldImage, setSoldImage] = useState(null); // 売れた商品画像
+  const [soldImage, setSoldImage] = useState(null);
+  // prefilledDataがあれば自動入力（メンバーが登録時に入力した情報）
+  const prefilled = item.prefilledData||null;
   const [form, setForm] = useState({
-    productName:"",
-    datetime:new Date().toISOString().slice(0,16), // 売れた時間
-    quantity:"",
-    genre:"",
-    memberName:user.name,
-    amount:""
+    productName: prefilled?.productName||"",
+    datetime:    prefilled?.datetime||new Date().toISOString().slice(0,16),
+    quantity:    prefilled?.quantity||"",
+    genre:       prefilled?.genre||"",
+    memberName:  prefilled?.memberName||user.name,
+    amount:      prefilled?.amount||""
   });
   const fileRef = useRef();
 
@@ -1483,15 +1572,14 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[] }
   function handleSoldImage(e) {
     const file = e.target.files[0]; if(!file) return;
     const r = new FileReader();
-    r.onload = async ev => {
-      // プレビューはそのまま表示、保存時は圧縮する
-      setSoldImage(ev.target.result);
-    };
+    r.onload = ev => setSoldImage(ev.target.result);
     r.readAsDataURL(file);
   }
 
-  // 売れた画像があり全項目入力済みでQR表示可能
-  const isComplete = form.productName&&form.datetime&&form.quantity&&form.genre&&form.amount&&soldImage;
+  // マスターは情報入力不要でQR表示可能（prefilledDataがあれば完全）
+  const isComplete = isMaster
+    ? true  // マスターは常にQR表示・保存可能
+    : form.productName&&form.datetime&&form.quantity&&form.genre&&form.amount&&soldImage;
 
   return (
     <div style={{animation:"fadeUp 0.3s ease"}}>
@@ -1500,7 +1588,17 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[] }
         <h2 style={{fontSize:16,fontWeight:700}}>{item.label}</h2>
       </div>
       <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:20}}>
-        <h3 style={{fontSize:15,fontWeight:700,marginBottom:16}}>📋 情報入力</h3>
+        <h3 style={{fontSize:15,fontWeight:700,marginBottom:8}}>📋 情報入力</h3>
+        {isMaster&&prefilled&&(
+          <div style={{background:C.greenDim,border:`1px solid ${C.greenBorder}`,borderRadius:10,padding:"8px 12px",marginBottom:12}}>
+            <p style={{fontSize:12,color:C.green,fontWeight:600}}>✅ メンバーが登録時に入力した情報が自動入力されています</p>
+          </div>
+        )}
+        {isMaster&&!prefilled&&(
+          <div style={{background:C.accentDim,border:`1px solid ${C.accentBorder}`,borderRadius:10,padding:"8px 12px",marginBottom:12}}>
+            <p style={{fontSize:12,color:C.accent,fontWeight:600}}>ℹ️ 情報入力は任意です。このまま保存することもできます</p>
+          </div>
+        )}
 
         {/* 在庫商品と紐付け */}
         {invItems.length>0&&(
@@ -1582,7 +1680,7 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[] }
         </div>
 
         {/* QR表示ボタン */}
-        {!soldImage&&(
+        {!soldImage&&!isMaster&&(
           <div style={{padding:"10px 14px",background:C.redDim,border:`1px solid ${C.redBorder}`,borderRadius:10,marginBottom:14}}>
             <p style={{fontSize:12,color:C.red,fontWeight:600}}>📸 先に売れた商品の画像を追加してください</p>
           </div>
