@@ -1,4 +1,4 @@
-// @version 7.5 - 2026-04-23
+// @version 7.6 - 2026-04-30
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -691,10 +691,27 @@ function InvItemForm({ close, existing, items, showToast, members=[] }) {
   const finalUnit=customUnit||form.unit;
   async function save() {
     if (!form.name.trim()){showToast("商品名を入力してください",C.red);return;}
-    const payload={...form,unit:finalUnit,category:catInput.trim()||"未分類",qty:Number(form.qty),minAlert:Number(form.minAlert),price:Number(form.price),visibleTo,shippingMethodId};
-    if (isEdit){await updateDoc(doc(db,"inv_items",existing.id),payload);showToast("更新しました");}
-    else{await addDoc(collection(db,"inv_items"),{...payload,createdAt:serverTimestamp()});showToast("追加しました");}
-    close();
+    // 画像が大きい場合はさらに圧縮
+    let image = form.image;
+    if (image && image.length > 500000) {
+      image = await compressImage(image, 400, 0.6);
+    }
+    if (image && image.length > 300000) {
+      image = await compressImage(image, 300, 0.5);
+    }
+    const payload={...form,image,unit:finalUnit,category:catInput.trim()||"未分類",qty:Number(form.qty),minAlert:Number(form.minAlert),price:Number(form.price),visibleTo,shippingMethodId};
+    try {
+      if (isEdit){await updateDoc(doc(db,"inv_items",existing.id),payload);showToast("更新しました");}
+      else{await addDoc(collection(db,"inv_items"),{...payload,createdAt:serverTimestamp()});showToast("追加しました");}
+      close();
+    } catch(e) {
+      console.error("Save error:", e);
+      // 画像なしで再試行
+      const {image:_img, ...payloadNoImg} = payload;
+      if (isEdit){await updateDoc(doc(db,"inv_items",existing.id),payloadNoImg);showToast("更新しました（画像サイズが大きいため画像なし）",C.orange);}
+      else{await addDoc(collection(db,"inv_items"),{...payloadNoImg,createdAt:serverTimestamp()});showToast("追加しました（画像サイズが大きいため画像なし）",C.orange);}
+      close();
+    }
   }
   return (
     <Overlay onClose={close}>
