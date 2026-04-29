@@ -1,4 +1,4 @@
-// @version 7.6 - 2026-04-30
+// @version 7.7 - 2026-04-30
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -1893,8 +1893,8 @@ function SalesApp({ qrItems, members, user, isMaster }) {
 // ═══════════════════════════════════════════════════════════════════
 function Overlay({ children, onClose }) {
   return (
-    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:20,padding:24,width:"100%",maxWidth:460,maxHeight:"92vh",overflowY:"auto",animation:"pop 0.2s ease",boxShadow:"0 24px 64px rgba(0,0,0,0.6)",border:`1px solid ${C.border}`}}>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:C.surface,borderRadius:20,padding:24,width:"100%",maxWidth:460,maxHeight:"92vh",overflowY:"auto",animation:"pop 0.2s ease",boxShadow:"0 24px 64px rgba(0,0,0,0.6)",border:`1px solid ${C.border}`}}>
         {children}
       </div>
     </div>
