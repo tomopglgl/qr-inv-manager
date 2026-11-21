@@ -1,4 +1,4 @@
-// @version 9.0 - 2026-11-22
+// @version 9.1 - 2026-11-22
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -55,7 +55,8 @@ const PERM_GROUPS = [
   ]},
   { title:"📷 QR発送", items:[
     ["qr_view_all","全QRを閲覧（マスターと同じ一覧）"],
-    ["qr_register_free","QR登録（入力必須なし・全発送方法・複数枚）"],
+    ["qr_register","QR登録タブを使う（入力必須あり）"],
+    ["qr_register_free","QR登録を入力必須なし・全発送方法・複数枚にする"],
     ["qr_cat_manage","カテゴリ別QR管理を見る"],
     ["qr_edit","QRを編集（ラベル・カテゴリ・担当）"],
     ["qr_delete","QRを削除"],
@@ -889,6 +890,7 @@ function QRApp({ qrItems, qrLog, members, user, isMaster: isMasterRole, can, sho
 
   // ── カテゴリ別QR：商品カテゴリごとの未使用QR（登録が古い順）──
   const poolItems = unreadItems.filter(i=>i.registeredRole!=="member");
+  const myPendingItems = unreadItems.filter(i=>i.lockedBy===user.name || (i.registeredRole==="member"&&i.registeredBy===user.name));
   const orderMap = {};
   const orderCnt = {};
   [...poolItems].filter(i=>i.invCategory).sort((a,b)=>qrKey(a)-qrKey(b)).forEach(i=>{
@@ -1064,7 +1066,8 @@ function QRApp({ qrItems, qrLog, members, user, isMaster: isMasterRole, can, sho
     {id:"myshipped",   label:"発送完了",   cnt:myShippedItems.length},
     {id:"mycompleted", label:"取引完了",   cnt:myCompletedItems.length},
   ];
-  const baseTabs=isMaster?masterTabs:memberTabs;
+  const canUpload = isMasterRole || can("qr_register") || can("qr_register_free");
+  const baseTabs=(isMaster?masterTabs:memberTabs).filter(t=>t.id!=="upload"||canUpload);
   const tabs=[
     ...baseTabs,
     ...(can("qr_cat_manage")?[{id:"cat",label:"カテゴリ別QR",cnt:null}]:[]),
@@ -1110,9 +1113,10 @@ function QRApp({ qrItems, qrLog, members, user, isMaster: isMasterRole, can, sho
         ))}
       </div>
 
-      {tab==="upload"&&<QRUploader qrItems={isMaster?qrItems:visibleQRs} user={user} showToast={showToast} isMaster={can("qr_register_free")} members={members} invItems={myInvItems}/>}
+      {tab==="upload"&&canUpload&&<QRUploader qrItems={isMaster?qrItems:visibleQRs} user={user} showToast={showToast} isMaster={can("qr_register_free")} members={members} invItems={myInvItems}/>}
       {tab==="unread"&&<AutoPickPanel invItems={myInvItems} getCandidates={getCandidates} orderMap={orderMap} onPick={handleAutoPick}/>}
-      {tab==="unread"&&<QRList items={unreadItems} user={user} isMaster={isMaster} can={can} onSelect={handleSelect} onDelete={handleDelete} onRelease={handleRelease} members={members} orderMap={orderMap} invCategories={[...new Set([...invItems.map(i=>i.category).filter(Boolean),...GENRES])]}/>}
+      {tab==="unread"&&!isMaster&&myPendingItems.length>0&&<div style={{marginBottom:6}}><p style={{fontSize:12,fontWeight:700,color:C.orange,marginBottom:8}}>✏️ 選択中・自分が登録したQR</p><QRList items={myPendingItems} user={user} isMaster={false} can={can} onSelect={handleSelect} onDelete={handleDelete} onRelease={handleRelease} members={members} orderMap={orderMap}/></div>}
+      {tab==="unread"&&isMaster&&<QRList items={unreadItems} user={user} isMaster={isMaster} can={can} onSelect={handleSelect} onDelete={handleDelete} onRelease={handleRelease} members={members} orderMap={orderMap} invCategories={[...new Set([...invItems.map(i=>i.category).filter(Boolean),...GENRES])]}/>}
       {tab==="read"&&isMaster&&<QRList items={allReadItems} user={user} isMaster={isMaster} can={can} readOnly onDelete={handleDelete} onRelease={handleRelease} members={members} onShip={can("qr_ship")?handleShip:null} soldImageMap={soldImageMap} onRevertUnread={can("qr_revert")?handleRevertUnreadModal:null}/>}
       {tab==="shipped"&&isMaster&&<ShippedList items={shippedItems} soldImageMap={soldImageMap} isMaster={isMaster} members={members} onDelete={can("qr_ship_delete")?handleShipDelete:null} onRevert={can("qr_revert")?handleRevertToRead:null}/>}
       {tab==="completed"&&isMaster&&<CompletedList items={completedItems} soldImageMap={soldImageMap} isMaster={isMaster} onRevert={can("qr_revert")?handleRevertToShipped:null}/>}
@@ -2250,34 +2254,24 @@ function PermModal({ member, close, showToast }) {
 }
 
 function AutoPickPanel({ invItems, getCandidates, orderMap, onPick }) {
-  const [selId, setSelId] = useState("");
-  const [busy,  setBusy]  = useState(false);
-  const product = invItems.find(i=>i.id===selId)||null;
-  const cands   = product ? getCandidates(product) : [];
-  const first   = cands[0]||null;
-  async function go() {
+  const [busy, setBusy] = useState(false);
+  async function choose(id) {
+    const product = invItems.find(i=>i.id===id);
+    if (!product) return;
     setBusy(true);
     try { await onPick(product); } finally { setBusy(false); }
   }
   return (
     <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.accentBorder}`,padding:16,marginBottom:14}}>
-      <p style={{fontSize:13,fontWeight:700,marginBottom:4}}>🏷 商品を選ぶと、そのカテゴリの一番古いQRを表示</p>
-      <p style={{fontSize:11,color:C.muted,marginBottom:10}}>他の人と重ならないよう、選んだ時点でこのQRはあなた専用になります</p>
-      <select value={selId} onChange={e=>setSelId(e.target.value)} style={inputS}>
-        <option value="">商品を選択してください</option>
-        {invItems.map(i=><option key={i.id} value={i.id}>{i.category?`[${i.category}] `:""}{i.name}（残{i.qty}{i.unit}）</option>)}
+      <p style={{fontSize:13,fontWeight:700,marginBottom:4}}>🏷 商品を選ぶ（そのカテゴリの一番古いQRを表示）</p>
+      <p style={{fontSize:11,color:C.muted,marginBottom:10}}>商品を選ぶと登録画面が開き、他の人と重ならないQRがあなた専用になります。シールもその順番で探せます。</p>
+      <select value="" disabled={busy} onChange={e=>choose(e.target.value)} style={inputS}>
+        <option value="">{busy?"QRを確保中...":"商品を選択してください"}</option>
+        {invItems.map(i=>{
+          const n=getCandidates(i).length;
+          return <option key={i.id} value={i.id} disabled={n===0}>{i.category?`[${i.category}] `:""}{i.name}（QR残り{n}枚）</option>;
+        })}
       </select>
-      {product&&!first&&<p style={{fontSize:12,color:C.red,marginTop:10}}>⚠️ 「{product.category||"未分類"}」カテゴリに使えるQRがありません</p>}
-      {product&&first&&(
-        <div style={{display:"flex",alignItems:"center",gap:12,marginTop:12,background:C.surface2,borderRadius:12,padding:10,border:`1px solid ${C.border}`}}>
-          <img src={first.imageData} style={{width:52,height:52,objectFit:"contain",borderRadius:8,background:"#fff",padding:3}}/>
-          <div style={{flex:1,minWidth:0}}>
-            <p style={{fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{first.label}</p>
-            <p style={{fontSize:11,color:C.muted}}>{product.category} の {orderMap[first.id]||"-"}番目 ／ 残り{cands.length}枚</p>
-          </div>
-          <button type="button" onClick={go} disabled={busy} style={{padding:"9px 14px",background:C.accent,color:"#fff",border:"none",borderRadius:10,fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>{busy?"確保中...":"このQRを使う"}</button>
-        </div>
-      )}
     </div>
   );
 }
