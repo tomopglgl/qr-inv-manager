@@ -1,8 +1,8 @@
-// @version 8.0 - 2026-05-01
+// @version 9.2 - 2026-11-22
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
-  getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc,
+  getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, runTransaction,
   query, orderBy, limit, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
@@ -39,6 +39,55 @@ const SHIPPING_METHODS = [
 ];
 // メンバーが登録できる発送方法
 const MEMBER_SHIPPING_METHODS = ["nekoposu","yupacket_plus","size60"];
+// ── 権限定義 ──
+const PERM_GROUPS = [
+  { title:"🗃 在庫管理", items:[
+    ["inv_qty_down","在庫を減らす（使用）"],
+    ["inv_qty_up","在庫を増やす（＋ボタン）"],
+    ["inv_add","商品を追加"],
+    ["inv_edit","商品を編集"],
+    ["inv_delete","商品を削除"],
+    ["inv_img_add","商品画像を追加"],
+    ["inv_img_delete","商品画像を削除"],
+    ["inv_visibility","公開メンバー・発送方法を設定"],
+    ["hist_all","全員の操作履歴を見る"],
+    ["hist_delete","操作履歴を削除"],
+  ]},
+  { title:"📷 QR発送", items:[
+    ["qr_view_all","全QRを閲覧（マスターと同じ一覧）"],
+    ["qr_register_free","QR登録を入力必須なし・全発送方法・複数枚にする"],
+    ["qr_cat_manage","カテゴリ別QR管理を見る"],
+    ["qr_edit","QRを編集（ラベル・カテゴリ・担当）"],
+    ["qr_delete","QRを削除"],
+    ["qr_release","使用中ロックを解除"],
+    ["qr_ship","発送完了にする"],
+    ["qr_revert","前の状態に戻す"],
+    ["qr_ship_delete","発送完了データを削除"],
+    ["qr_log","操作ログを見る"],
+  ]},
+  { title:"💰 売上", items:[
+    ["sales_all","全メンバーの売上を見る"],
+  ]},
+];
+const ALL_PERM_KEYS = PERM_GROUPS.flatMap(g=>g.items.map(i=>i[0]));
+const PERM_PRESETS = {
+  standard:{ label:"👤 標準（これまで通り）", keys:["inv_qty_down"] },
+  view:    { label:"👁 閲覧のみ",             keys:[] },
+  edit:    { label:"✏️ 編集可",               keys:["inv_qty_down","inv_qty_up","inv_add","inv_edit","inv_img_add","qr_cat_manage","qr_edit","qr_release"] },
+  full:    { label:"👑 フル権限",             keys:ALL_PERM_KEYS },
+};
+function resolvePerms(m) {
+  const p=m&&m.permissions;
+  if (p&&typeof p==="object") return p;
+  const o={}; PERM_PRESETS.standard.keys.forEach(k=>{o[k]=true;}); return o;
+}
+function permLabel(m) {
+  if (m.permPreset&&PERM_PRESETS[m.permPreset]) return PERM_PRESETS[m.permPreset].label.replace(/^\S+\s/,"");
+  if (m.permissions) return "カスタム";
+  return "標準";
+}
+// QRの登録順キー（小さいほど古い）
+function qrKey(i) { return i.seq || ((i.uploadedAt&&i.uploadedAt.seconds?i.uploadedAt.seconds:0)*1000); }
 const UNIT_PRESETS = ["個","枚","本","冊","箱","袋","缶","kg","g","L","ml","セット","台","足"];
 function genId()  { return Math.random().toString(36).slice(2)+Date.now().toString(36); }
 function tsToStr(ts) {
@@ -285,6 +334,9 @@ export default function App() {
   if (!user) return <LoginScreen members={members} onLogin={setUser}/>;
 
   const isMaster = user.role==="master";
+  const me = members.find(x=>x.id===user.id)||user;
+  const myPerms = resolvePerms(me);
+  const can = k => isMaster || !!myPerms[k];
 
   return (
     <div style={{minHeight:"100vh",background:C.bg}}>
@@ -335,9 +387,9 @@ export default function App() {
       {appMode==="inventory"&&<LowStockBanner items={invItems}/>}
 
       <main style={{maxWidth:860,margin:"0 auto",padding:16}}>
-        {appMode==="inventory"&&<InventoryApp items={invItems} history={invHist} members={members} user={user} isMaster={isMaster} showToast={showToast} addNotice={addNotice}/>}
-        {appMode==="qr"&&<QRApp qrItems={qrItems} qrLog={qrLog} members={members} user={user} isMaster={isMaster} showToast={showToast} addNotice={addNotice} invItems={invItems} invHist={invHist} soldImageMap={soldImageMap}/>}
-        {appMode==="sales"&&<SalesApp qrItems={qrItems} members={members} user={user} isMaster={isMaster}/>}
+        {appMode==="inventory"&&<InventoryApp items={invItems} history={invHist} members={members} user={user} isMaster={isMaster} can={can} showToast={showToast} addNotice={addNotice}/>}
+        {appMode==="qr"&&<QRApp qrItems={qrItems} qrLog={qrLog} members={members} user={user} isMaster={isMaster} can={can} showToast={showToast} addNotice={addNotice} invItems={invItems} invHist={invHist} soldImageMap={soldImageMap}/>}
+        {appMode==="sales"&&<SalesApp qrItems={qrItems} members={members} user={user} isMaster={can("sales_all")}/>}
       </main>
     </div>
   );
@@ -446,7 +498,7 @@ function NoticePanel({ notices, onClose, onDelete, onClear }) {
 // ═══════════════════════════════════════════════════════════════════
 // ▌ INVENTORY APP
 // ═══════════════════════════════════════════════════════════════════
-function InventoryApp({ items, history, members, user, isMaster, showToast, addNotice }) {
+function InventoryApp({ items, history, members, user, isMaster, can, showToast, addNotice }) {
   const [page,   setPage]   = useState("home");
   const [selItem,setSelItem]= useState(null);
   const [modal,  setModal]  = useState(null);
@@ -475,17 +527,17 @@ function InventoryApp({ items, history, members, user, isMaster, showToast, addN
         ))}
       </nav>
 
-      {modal&&<InvModal modal={modal} setModal={setModal} items={items} showToast={showToast} members={members}/>}
+      {modal&&<InvModal modal={modal} setModal={setModal} items={items} showToast={showToast} members={members} can={can}/>}
 
-      {page==="home"&&!selItem&&<InvHome items={visibleItems} isMaster={isMaster} onSelect={it=>{setSelItem(it);setPage("detail");}} onAdd={()=>setModal({type:"addItem"})} changeQty={changeQty}/>}
-      {page==="detail"&&selItem&&<InvDetail item={items.find(i=>i.id===selItem.id)||selItem} isMaster={isMaster} changeQty={changeQty} history={history.filter(h=>h.itemId===selItem.id)} onBack={()=>{setPage("home");setSelItem(null);}} onEdit={()=>setModal({type:"editItem",item:items.find(i=>i.id===selItem.id)||selItem})} onDelete={async()=>{await deleteDoc(doc(db,"inv_items",selItem.id));setPage("home");setSelItem(null);showToast("削除しました",C.red);}}/>}
-      {page==="history"&&<InvHistory history={history} isMaster={isMaster} user={user} showToast={showToast}/>}
+      {page==="home"&&!selItem&&<InvHome items={visibleItems} can={can} onSelect={it=>{setSelItem(it);setPage("detail");}} onAdd={()=>setModal({type:"addItem"})} changeQty={changeQty}/>}
+      {page==="detail"&&selItem&&<InvDetail item={items.find(i=>i.id===selItem.id)||selItem} can={can} changeQty={changeQty} history={history.filter(h=>h.itemId===selItem.id)} onBack={()=>{setPage("home");setSelItem(null);}} onEdit={()=>setModal({type:"editItem",item:items.find(i=>i.id===selItem.id)||selItem})} onDelete={async()=>{await deleteDoc(doc(db,"inv_items",selItem.id));setPage("home");setSelItem(null);showToast("削除しました",C.red);}}/>}
+      {page==="history"&&<InvHistory history={history} isMaster={can("hist_all")} canDelete={can("hist_delete")} user={user} showToast={showToast}/>}
       {page==="members"&&isMaster&&<InvMembers members={members} showToast={showToast} onAdd={()=>setModal({type:"addUser"})}/>}
     </div>
   );
 }
 
-function InvHome({ items, isMaster, onSelect, onAdd, changeQty }) {
+function InvHome({ items, can, onSelect, onAdd, changeQty }) {
   const [search,setSearch]=useState("");
   const [sortBy,setSortBy]=useState("category");
   const [cat,   setCat]   =useState("すべて");
@@ -503,7 +555,7 @@ function InvHome({ items, isMaster, onSelect, onAdd, changeQty }) {
         <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{...inputS,width:"auto"}}>
           <option value="category">カテゴリ順</option><option value="name">名前順</option><option value="qty">在庫数順</option>
         </select>
-        {isMaster&&<button onClick={onAdd} style={{padding:"9px 16px",background:C.accent,color:"#fff",border:"none",borderRadius:10,fontSize:13,fontWeight:700,whiteSpace:"nowrap"}}>＋ 追加</button>}
+        {can("inv_add")&&<button onClick={onAdd} style={{padding:"9px 16px",background:C.accent,color:"#fff",border:"none",borderRadius:10,fontSize:13,fontWeight:700,whiteSpace:"nowrap"}}>＋ 追加</button>}
       </div>
       {filtered.length===0&&<p style={{color:C.muted,textAlign:"center",padding:40}}>商品が見つかりません</p>}
       {grouped.map(({c,items:gi})=>(
@@ -512,14 +564,14 @@ function InvHome({ items, isMaster, onSelect, onAdd, changeQty }) {
             <span style={{fontSize:11,fontWeight:700,color:C.accent,background:C.accentDim,padding:"3px 12px",borderRadius:20,border:`1px solid ${C.accentBorder}`}}>{c}</span>
             <div style={{flex:1,height:1,background:C.border}}/><span style={{fontSize:10,color:C.muted}}>{gi.length}件</span>
           </div>}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>{gi.map(it=><InvCard key={it.id} item={it} isMaster={isMaster} onSelect={()=>onSelect(it)} changeQty={changeQty}/>)}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>{gi.map(it=><InvCard key={it.id} item={it} can={can} onSelect={()=>onSelect(it)} changeQty={changeQty}/>)}</div>
         </div>
       ))}
     </div>
   );
 }
 
-function InvCard({ item, isMaster, onSelect, changeQty }) {
+function InvCard({ item, can, onSelect, changeQty }) {
   const empty=item.qty===0, low=item.qty>0&&item.qty<=item.minAlert;
   const bc=empty?C.redBorder:low?C.orangeBorder:C.border;
   return (
@@ -534,16 +586,16 @@ function InvCard({ item, isMaster, onSelect, changeQty }) {
         <ShippingBadge methodId={item.shippingMethodId} size="sm"/>
         <p style={{fontSize:10,color:C.muted,marginBottom:10}}>¥{(item.price||0).toLocaleString()} / {item.unit}</p>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <button onClick={()=>changeQty(item,-1)} disabled={item.qty===0} style={{width:32,height:32,borderRadius:8,border:"none",fontSize:18,fontWeight:700,background:item.qty===0?C.surface2:C.redDim,color:item.qty===0?C.faint:C.red,cursor:item.qty===0?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>－</button>
+          <button onClick={()=>changeQty(item,-1)} disabled={item.qty===0||!can("inv_qty_down")} style={{width:32,height:32,borderRadius:8,border:"none",fontSize:18,fontWeight:700,background:(item.qty===0||!can("inv_qty_down"))?C.surface2:C.redDim,color:(item.qty===0||!can("inv_qty_down"))?C.faint:C.red,cursor:(item.qty===0||!can("inv_qty_down"))?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>－</button>
           <div style={{textAlign:"center"}}><span style={{fontSize:20,fontWeight:700,color:empty?C.red:low?C.orange:C.text}}>{item.qty}</span><span style={{fontSize:10,color:C.muted,marginLeft:3}}>{item.unit}</span></div>
-          {isMaster?<button onClick={()=>changeQty(item,+1)} style={{width:32,height:32,borderRadius:8,border:"none",fontSize:18,fontWeight:700,background:C.greenDim,color:C.green,display:"flex",alignItems:"center",justifyContent:"center"}}>＋</button>:<div style={{width:32}}/>}
+          {can("inv_qty_up")?<button onClick={()=>changeQty(item,+1)} style={{width:32,height:32,borderRadius:8,border:"none",fontSize:18,fontWeight:700,background:C.greenDim,color:C.green,display:"flex",alignItems:"center",justifyContent:"center"}}>＋</button>:<div style={{width:32}}/>}
         </div>
       </div>
     </div>
   );
 }
 
-function InvDetail({ item, isMaster, changeQty, history, onBack, onEdit, onDelete }) {
+function InvDetail({ item, can, changeQty, history, onBack, onEdit, onDelete }) {
   const empty=item.qty===0, low=item.qty>0&&item.qty<=item.minAlert;
   return (
     <div style={{animation:"fadeUp 0.3s ease"}}>
@@ -553,9 +605,9 @@ function InvDetail({ item, isMaster, changeQty, history, onBack, onEdit, onDelet
           <div style={{width:"100%",aspectRatio:"1/1",borderRadius:16,background:item.image?`url(${item.image}) center/cover`:C.surface2,display:"flex",alignItems:"center",justifyContent:"center",border:`1px solid ${C.border}`,marginBottom:10}}>
             {!item.image&&<span style={{fontSize:48,opacity:0.15}}>📦</span>}
           </div>
-          {isMaster&&<div style={{display:"flex",gap:8}}>
-            <button onClick={onEdit} style={{flex:1,padding:"9px",background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,fontSize:13,fontWeight:600,color:C.text}}>✏️ 編集</button>
-            <button onClick={onDelete} style={{flex:1,padding:"9px",background:C.redDim,border:`1px solid ${C.redBorder}`,borderRadius:10,fontSize:13,fontWeight:600,color:C.red}}>🗑 削除</button>
+          {(can("inv_edit")||can("inv_delete"))&&<div style={{display:"flex",gap:8}}>
+            {can("inv_edit")&&<button onClick={onEdit} style={{flex:1,padding:"9px",background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,fontSize:13,fontWeight:600,color:C.text}}>✏️ 編集</button>}
+            {can("inv_delete")&&<button onClick={()=>{if(confirm("この商品を削除しますか？"))onDelete();}} style={{flex:1,padding:"9px",background:C.redDim,border:`1px solid ${C.redBorder}`,borderRadius:10,fontSize:13,fontWeight:600,color:C.red}}>🗑 削除</button>}
           </div>}
         </div>
         <div>
@@ -578,8 +630,8 @@ function InvDetail({ item, isMaster, changeQty, history, onBack, onEdit, onDelet
             <p style={{fontSize:11,color:C.muted,marginBottom:6}}>現在の在庫</p>
             <p style={{fontSize:44,fontWeight:700,color:empty?C.red:low?C.orange:C.text,lineHeight:1,fontFamily:"'Sora',sans-serif"}}>{item.qty}<span style={{fontSize:14,color:C.muted,fontWeight:400}}> {item.unit}</span></p>
             <div style={{display:"flex",justifyContent:"center",gap:16,marginTop:14}}>
-              <button onClick={()=>changeQty(item,-1)} disabled={item.qty===0} style={{width:48,height:48,borderRadius:12,border:"none",fontSize:22,fontWeight:700,background:item.qty===0?C.surface2:C.redDim,color:item.qty===0?C.faint:C.red,cursor:item.qty===0?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>－</button>
-              {isMaster&&<button onClick={()=>changeQty(item,+1)} style={{width:48,height:48,borderRadius:12,border:"none",fontSize:22,fontWeight:700,background:C.greenDim,color:C.green,display:"flex",alignItems:"center",justifyContent:"center"}}>＋</button>}
+              <button onClick={()=>changeQty(item,-1)} disabled={item.qty===0||!can("inv_qty_down")} style={{width:48,height:48,borderRadius:12,border:"none",fontSize:22,fontWeight:700,background:(item.qty===0||!can("inv_qty_down"))?C.surface2:C.redDim,color:(item.qty===0||!can("inv_qty_down"))?C.faint:C.red,cursor:(item.qty===0||!can("inv_qty_down"))?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>－</button>
+              {can("inv_qty_up")&&<button onClick={()=>changeQty(item,+1)} style={{width:48,height:48,borderRadius:12,border:"none",fontSize:22,fontWeight:700,background:C.greenDim,color:C.green,display:"flex",alignItems:"center",justifyContent:"center"}}>＋</button>}
             </div>
           </div>
         </div>
@@ -602,14 +654,14 @@ function InvDetail({ item, isMaster, changeQty, history, onBack, onEdit, onDelet
   );
 }
 
-function InvHistory({ history, isMaster, user, showToast }) {
+function InvHistory({ history, isMaster, canDelete=false, user, showToast }) {
   const [confirm,setConfirm]=useState(false);
   const visible=isMaster?history:history.filter(h=>h.userId===user.id);
   return (
     <div style={{animation:"fadeUp 0.3s ease"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <h2 style={{fontSize:16,fontWeight:700}}>{isMaster?"全操作履歴":"自分の操作履歴"}</h2>
-        {isMaster&&visible.length>0&&<button onClick={()=>setConfirm(true)} style={{padding:"7px 14px",background:C.redDim,color:C.red,border:`1px solid ${C.redBorder}`,borderRadius:8,fontSize:12}}>🗑 全削除</button>}
+        {canDelete&&visible.length>0&&<button onClick={()=>setConfirm(true)} style={{padding:"7px 14px",background:C.redDim,color:C.red,border:`1px solid ${C.redBorder}`,borderRadius:8,fontSize:12}}>🗑 全削除</button>}
       </div>
       {confirm&&(
         <div style={{background:C.redDim,border:`1px solid ${C.redBorder}`,borderRadius:12,padding:"13px 16px",marginBottom:14,display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
@@ -642,9 +694,11 @@ function InvHistory({ history, isMaster, user, showToast }) {
 
 function InvMembers({ members, showToast, onAdd }) {
   const [showPw,setShowPw]=useState({});
+  const [permM,setPermM]=useState(null);
   return (
     <div style={{animation:"fadeUp 0.3s ease"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        {permM&&<PermModal member={permM} close={()=>setPermM(null)} showToast={showToast}/>}
         <h2 style={{fontSize:16,fontWeight:700}}>メンバー管理</h2>
         <button onClick={onAdd} style={{padding:"8px 16px",background:C.accent,color:"#fff",border:"none",borderRadius:10,fontSize:13,fontWeight:700}}>＋ 追加</button>
       </div>
@@ -660,6 +714,7 @@ function InvMembers({ members, showToast, onAdd }) {
               </div>
             </div>
             <span style={{fontSize:10,padding:"2px 9px",borderRadius:20,fontWeight:700,background:m.role==="master"?C.purpleDim:C.accentDim,color:m.role==="master"?C.purple:C.accent,border:`1px solid ${m.role==="master"?C.purpleBorder:C.accentBorder}`,whiteSpace:"nowrap"}}>{m.role==="master"?"マスター":"メンバー"}</span>
+            {m.role!=="master"&&<button onClick={()=>setPermM(m)} style={{padding:"5px 11px",background:C.purpleDim,color:C.purple,border:`1px solid ${C.purpleBorder}`,borderRadius:8,fontSize:12,whiteSpace:"nowrap"}}>🔐 権限（{permLabel(m)}）</button>}
             {m.role!=="master"&&<button onClick={async()=>{if(!confirm(`${m.name}を削除しますか？`))return;await deleteDoc(doc(db,"members",m.id));showToast("削除しました");}} style={{padding:"5px 11px",background:C.redDim,color:C.red,border:`1px solid ${C.redBorder}`,borderRadius:8,fontSize:12}}>削除</button>}
           </div>
         ))}
@@ -668,14 +723,14 @@ function InvMembers({ members, showToast, onAdd }) {
   );
 }
 
-function InvModal({ modal, setModal, items, showToast, members }) {
+function InvModal({ modal, setModal, items, showToast, members, can=()=>true }) {
   const close=()=>setModal(null);
-  if (modal.type==="addItem"||modal.type==="editItem") return <InvItemForm close={close} existing={modal.item} items={items} showToast={showToast} members={members}/>;
+  if (modal.type==="addItem"||modal.type==="editItem") return <InvItemForm close={close} existing={modal.item} items={items} showToast={showToast} members={members} can={can}/>;
   if (modal.type==="addUser") return <InvAddUser close={close} showToast={showToast}/>;
   return null;
 }
 
-function InvItemForm({ close, existing, items, showToast, members=[] }) {
+function InvItemForm({ close, existing, items, showToast, members=[], can=()=>true }) {
   const isEdit=!!existing;
   const existingCats=[...new Set(items.map(i=>i.category).filter(Boolean))].sort();
   const initUnit=existing?.unit||"個";
@@ -716,11 +771,11 @@ function InvItemForm({ close, existing, items, showToast, members=[] }) {
   return (
     <Overlay onClose={close}>
       <h2 style={{fontFamily:"'Sora',sans-serif",fontSize:18,fontWeight:700,marginBottom:16}}>{isEdit?"商品を編集":"商品を追加"}</h2>
-      <div onClick={()=>fileRef.current.click()} style={{width:"100%",height:90,borderRadius:12,cursor:"pointer",background:form.image?`url(${form.image}) center/cover`:C.surface2,border:`2px dashed ${C.border}`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",marginBottom:12,gap:4}}>
-        {!form.image&&<><span style={{fontSize:22}}>📷</span><span style={{fontSize:12,color:C.muted}}>画像を追加（任意）</span></>}
+      <div onClick={()=>{if(can("inv_img_add"))fileRef.current.click();}} style={{width:"100%",height:90,borderRadius:12,cursor:can("inv_img_add")?"pointer":"default",background:form.image?`url(${form.image}) center/cover`:C.surface2,border:`2px dashed ${C.border}`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",marginBottom:12,gap:4}}>
+        {!form.image&&<><span style={{fontSize:22}}>📷</span><span style={{fontSize:12,color:C.muted}}>{can("inv_img_add")?"画像を追加（任意）":"画像の追加権限がありません"}</span></>}
         <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>setForm(p=>({...p,image:ev.target.result}));r.readAsDataURL(f);}}/>
       </div>
-      {form.image&&<button onClick={()=>setForm(p=>({...p,image:null}))} style={{padding:"5px 12px",background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12,color:C.red,marginBottom:10}}>画像を削除</button>}
+      {form.image&&can("inv_img_delete")&&<button onClick={()=>setForm(p=>({...p,image:null}))} style={{padding:"5px 12px",background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12,color:C.red,marginBottom:10}}>画像を削除</button>}
       <Fg label="商品名 *"><input value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} style={inputS} placeholder="例: コーヒー豆"/></Fg>
       <div style={{marginBottom:12,position:"relative"}}>
         <label style={labelS}>カテゴリ</label>
@@ -743,7 +798,7 @@ function InvItemForm({ close, existing, items, showToast, members=[] }) {
       <Fg label="メモ"><input value={form.note} onChange={e=>setForm(p=>({...p,note:e.target.value}))} style={inputS} placeholder="任意"/></Fg>
 
       {/* 発送方法 */}
-      <div style={{marginBottom:12}}>
+      {can("inv_visibility")&&<div style={{marginBottom:12}}>
         <label style={labelS}>発送方法（メンバーに表示される）</label>
         <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:4}}>
           <button type="button" onClick={()=>setShippingMethodId("")} style={{padding:"4px 12px",fontSize:11,border:`1px solid ${!shippingMethodId?C.accent:C.border}`,borderRadius:20,background:!shippingMethodId?C.accentDim:C.surface2,color:!shippingMethodId?C.accent:C.muted}}>
@@ -755,9 +810,9 @@ function InvItemForm({ close, existing, items, showToast, members=[] }) {
             </button>
           ))}
         </div>
-      </div>
+      </div>}
 
-      <div style={{marginBottom:12}}>
+      {can("inv_visibility")&&<div style={{marginBottom:12}}>
         <label style={labelS}>公開するメンバー（未選択 = 全員に公開）</label>
         <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:4}}>
           {members.filter(m=>m.role==="member").map(m=>(
@@ -768,7 +823,7 @@ function InvItemForm({ close, existing, items, showToast, members=[] }) {
           ))}
         </div>
         {visibleTo.length===0&&<p style={{fontSize:11,color:C.muted,marginTop:4}}>全メンバーに公開されます</p>}
-      </div>
+      </div>}
       <div style={{display:"flex",gap:10,marginTop:16}}>
         <button onClick={close} style={{flex:1,padding:"11px",background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,fontSize:14,color:C.muted}}>キャンセル</button>
         <button onClick={save} style={{flex:2,padding:"11px",background:C.accent,color:"#fff",border:"none",borderRadius:10,fontWeight:700,fontSize:14}}>{isEdit?"更新する":"追加する"}</button>
@@ -808,7 +863,9 @@ function InvAddUser({ close, showToast }) {
 // ═══════════════════════════════════════════════════════════════════
 // ▌ QR APP
 // ═══════════════════════════════════════════════════════════════════
-function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, invItems=[], invHist=[], soldImageMap={} }) {
+function QRApp({ qrItems, qrLog, members, user, isMaster: isMasterRole, can, showToast, addNotice, invItems=[], invHist=[], soldImageMap={} }) {
+  // 「全QRを閲覧」権限があればマスターと同じ一覧・タブを表示
+  const isMaster = can("qr_view_all");
   const [tab,        setTab]        = useState("unread");
   const [selectedItem,setSelected]  = useState(null);
 
@@ -828,7 +885,55 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
   const unreadItems  = visibleQRs.filter(i=>i.status==="unread");
   const myReadItems  = visibleQRs.filter(i=>i.status==="read"&&i.formData?.memberName===user.name);
   const allReadItems = visibleQRs.filter(i=>i.status==="read");
-  const myInvItems   = isMaster ? invItems : invItems.filter(i=>!i.visibleTo||i.visibleTo.length===0||i.visibleTo.includes(user.name));
+  const myInvItems   = isMasterRole ? invItems : invItems.filter(i=>!i.visibleTo||i.visibleTo.length===0||i.visibleTo.includes(user.name));
+
+  // ── カテゴリ別QR：商品カテゴリごとの未使用QR（登録が古い順）──
+  const poolItems = unreadItems.filter(i=>i.registeredRole!=="member");
+  const myPendingItems = unreadItems.filter(i=>i.lockedBy===user.name || (i.registeredRole==="member"&&i.registeredBy===user.name));
+  const orderMap = {};
+  const orderCnt = {};
+  [...poolItems].filter(i=>i.invCategory).sort((a,b)=>qrKey(a)-qrKey(b)).forEach(i=>{
+    orderCnt[i.invCategory]=(orderCnt[i.invCategory]||0)+1;
+    orderMap[i.id]=orderCnt[i.invCategory];
+  });
+  function getCandidates(product) {
+    if (!product||!product.category) return [];
+    const method = SHIPPING_METHODS.find(m=>m.id===product.shippingMethodId);
+    return poolItems
+      .filter(i=>i.invCategory===product.category)
+      .filter(i=>!i.assignedMember||i.assignedMember===user.name)
+      .filter(i=>!i.lockedBy||i.lockedBy===user.name)
+      .filter(i=>{
+        if (!method) return true;
+        const isMethodName = SHIPPING_METHODS.some(m=>m.name===i.category);
+        return !isMethodName || i.category===method.name;
+      })
+      .sort((a,b)=>{
+        const am=a.lockedBy===user.name?0:1, bm=b.lockedBy===user.name?0:1;
+        return am!==bm ? am-bm : qrKey(a)-qrKey(b);
+      });
+  }
+  async function handleAutoPick(product) {
+    const cands = getCandidates(product);
+    let picked = null;
+    for (const c of cands) {
+      try {
+        const ok = await runTransaction(db, async tx=>{
+          const ref = doc(db,"qr_items",c.id);
+          const snap = await tx.get(ref);
+          if (!snap.exists()) return false;
+          const d = snap.data();
+          if (d.status!=="unread" || (d.lockedBy&&d.lockedBy!==user.name)) return false;
+          tx.update(ref,{lockedBy:user.name,claimProduct:product.name,claimProductId:product.id,claimedAt:serverTimestamp()});
+          return true;
+        });
+        if (ok) { picked=c; break; }
+      } catch(e) { console.warn("claim failed",e); }
+    }
+    if (!picked) { showToast("このカテゴリの未使用QRがありません",C.red); return; }
+    await addDoc(collection(db,"qr_log"),{userName:user.name,action:"自動割当",detail:`${picked.label}（${product.category} の ${orderMap[picked.id]||"-"}番目）→ ${product.name}`,createdAt:serverTimestamp()});
+    setSelected({...picked,lockedBy:user.name,claimProduct:product.name,claimProductId:product.id,autoOrder:orderMap[picked.id]||null});
+  }
 
   async function handleSelect(item) {
     if (item.lockedBy&&item.lockedBy!==user.name) return;
@@ -877,7 +982,7 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
     setTab(isMaster?"read":"myread");
   }
   async function handleCancel() {
-    await updateDoc(doc(db,"qr_items",selectedItem.id),{lockedBy:null});
+    await updateDoc(doc(db,"qr_items",selectedItem.id),{lockedBy:null,claimProduct:null,claimProductId:null,claimedAt:null});
     setSelected(null);
   }
   async function handleDelete(item) {
@@ -887,7 +992,7 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
     showToast("削除しました",C.red);
   }
   async function handleRelease(item) {
-    await updateDoc(doc(db,"qr_items",item.id),{lockedBy:null});
+    await updateDoc(doc(db,"qr_items",item.id),{lockedBy:null,claimProduct:null,claimProductId:null,claimedAt:null});
     await addDoc(collection(db,"qr_log"),{userName:user.name,action:"ロック解除",detail:`強制解除: ${item.label}`,createdAt:serverTimestamp()});
     showToast("ロックを解除しました",C.orange);
   }
@@ -950,7 +1055,6 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
     {id:"read",      label:"読み込み済", cnt:allReadItems.length},
     {id:"shipped",   label:"発送完了",   cnt:shippedItems.length},
     {id:"completed", label:"取引完了",   cnt:completedItems.length},
-    {id:"log",       label:"操作ログ",   cnt:null},
   ];
   const myShippedItems   = visibleQRs.filter(i=>i.status==="shipped"&&i.formData?.memberName===user.name);
   const myCompletedItems = visibleQRs.filter(i=>i.status==="completed"&&i.formData?.memberName===user.name);
@@ -961,7 +1065,12 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
     {id:"myshipped",   label:"発送完了",   cnt:myShippedItems.length},
     {id:"mycompleted", label:"取引完了",   cnt:myCompletedItems.length},
   ];
-  const tabs=isMaster?masterTabs:memberTabs;
+  const baseTabs=isMaster?masterTabs:memberTabs;
+  const tabs=[
+    ...baseTabs,
+    ...(can("qr_cat_manage")?[{id:"cat",label:"カテゴリ別QR",cnt:null}]:[]),
+    ...(can("qr_log")?[{id:"log",label:"操作ログ",cnt:null}]:[]),
+  ];
 
   return (
     <div style={{animation:"fadeUp 0.3s ease"}}>
@@ -1002,13 +1111,18 @@ function QRApp({ qrItems, qrLog, members, user, isMaster, showToast, addNotice, 
         ))}
       </div>
 
-      {tab==="upload"&&<QRUploader qrItems={qrItems} user={user} showToast={showToast} isMaster={isMaster} members={members} invItems={myInvItems}/>}
-      {tab==="unread"&&<QRList items={unreadItems} user={user} isMaster={isMaster} onSelect={handleSelect} onDelete={handleDelete} onRelease={handleRelease} members={members}/>}
-      {tab==="read"&&isMaster&&<QRList items={allReadItems} user={user} isMaster={isMaster} readOnly onDelete={handleDelete} onRelease={handleRelease} members={members} onShip={handleShip} soldImageMap={soldImageMap} onRevertUnread={handleRevertUnreadModal}/>}
-      {tab==="shipped"&&isMaster&&<ShippedList items={shippedItems} soldImageMap={soldImageMap} isMaster={isMaster} members={members} onDelete={handleShipDelete}/>}
+      {tab==="upload"&&<QRUploader qrItems={isMaster?qrItems:visibleQRs} user={user} showToast={showToast} isMaster={can("qr_register_free")} members={members} invItems={myInvItems}/>}
+      {tab==="unread"&&<AutoPickPanel invItems={myInvItems} getCandidates={getCandidates} orderMap={orderMap} onPick={handleAutoPick}/>}
+      {tab==="unread"&&!isMaster&&myPendingItems.length>0&&<div style={{marginBottom:6}}><p style={{fontSize:12,fontWeight:700,color:C.orange,marginBottom:8}}>✏️ 選択中・自分が登録したQR</p><QRList items={myPendingItems} user={user} isMaster={false} can={can} onSelect={handleSelect} onDelete={handleDelete} onRelease={handleRelease} members={members} orderMap={orderMap}/></div>}
+      {tab==="unread"&&isMaster&&<QRList items={unreadItems} user={user} isMaster={isMaster} can={can} onSelect={handleSelect} onDelete={handleDelete} onRelease={handleRelease} members={members} orderMap={orderMap} invCategories={[...new Set([...invItems.map(i=>i.category).filter(Boolean),...GENRES])]}/>}
+      {tab==="read"&&isMaster&&<QRList items={allReadItems} user={user} isMaster={isMaster} can={can} readOnly onDelete={handleDelete} onRelease={handleRelease} members={members} onShip={can("qr_ship")?handleShip:null} soldImageMap={soldImageMap} onRevertUnread={can("qr_revert")?handleRevertUnreadModal:null}/>}
+      {tab==="shipped"&&isMaster&&<ShippedList items={shippedItems} soldImageMap={soldImageMap} isMaster={isMaster} members={members} onDelete={can("qr_ship_delete")?handleShipDelete:null} onRevert={can("qr_revert")?handleRevertToRead:null}/>}
+      {tab==="completed"&&isMaster&&<CompletedList items={completedItems} soldImageMap={soldImageMap} isMaster={isMaster} onRevert={can("qr_revert")?handleRevertToShipped:null}/>}
       {tab==="myread"&&!isMaster&&<QRReadList items={myReadItems} soldImageMap={soldImageMap}/>}
-      {tab==="myshipped"&&!isMaster&&<ShippedList items={myShippedItems} soldImageMap={soldImageMap}/>}
-      {tab==="log"&&isMaster&&(
+      {tab==="myshipped"&&!isMaster&&<ShippedList items={myShippedItems} soldImageMap={soldImageMap} user={user} onComplete={handleComplete}/>}
+      {tab==="mycompleted"&&!isMaster&&<CompletedList items={myCompletedItems} soldImageMap={soldImageMap}/>}
+      {tab==="cat"&&can("qr_cat_manage")&&<QRCategoryManager qrItems={qrItems} invItems={invItems} can={can} onRelease={handleRelease} showToast={showToast}/>}
+      {tab==="log"&&can("qr_log")&&(
         <div>
           <h3 style={{fontSize:15,fontWeight:700,marginBottom:12}}>操作ログ</h3>
           {qrLog.length===0?<p style={{color:C.muted,textAlign:"center",padding:40}}>ログがありません</p>
@@ -1040,8 +1154,11 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[], invItems=[
   const [soldPreview,setSoldPrev]= useState(null);
   const [formData,  setFormData] = useState({productName:"",datetime:new Date().toISOString().slice(0,16),quantity:"",amount:"",genre:""});
   const [errors,    setErrors]   = useState({});
+  const [invCat,    setInvCat]   = useState("");
+  const [imgList,   setImgList]  = useState([]);
   const fileRef     = useRef();
   const soldFileRef = useRef();
+  const catOptions = [...new Set([...invItems.map(i=>i.category).filter(Boolean),...GENRES])];
 
   const availableMethods = isMaster
     ? SHIPPING_METHODS
@@ -1051,10 +1168,12 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[], invItems=[
   const filteredCats = existingCats.filter(c=>c.toLowerCase().includes(catInput.toLowerCase())&&c!==catInput);
 
   function handleQRFile(e) {
-    const file=e.target.files[0]; if(!file) return;
-    const r=new FileReader();
-    r.onload=ev=>{setPreview(ev.target.result);setImgData(ev.target.result);};
-    r.readAsDataURL(file);
+    const files=Array.from(e.target.files||[]); if(!files.length) return;
+    const readers=files.map(f=>new Promise(res=>{const r=new FileReader();r.onload=ev=>res(ev.target.result);r.readAsDataURL(f);}));
+    Promise.all(readers).then(list=>{
+      setPreview(list[0]); setImgData(list[0]);
+      setImgList(isMaster?list:[list[0]]);
+    });
   }
   async function handleSoldFile(e) {
     const file=e.target.files[0]; if(!file) return;
@@ -1096,6 +1215,7 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[], invItems=[
       linkedItemId:null,
       registeredBy:user.name,
       registeredRole:user.role,
+      invCategory: !isMaster ? (formData.genre||null) : (invCat||null),
       // メンバーの場合は事前入力データを保存
       prefilledData: !isMaster ? {
         productName: formData.productName,
@@ -1108,7 +1228,16 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[], invItems=[
       uploadedAt:serverTimestamp()
     };
 
-    const ref = await addDoc(collection(db,"qr_items"), qrDocData);
+    const list = (isMaster && imgList.length>1) ? imgList : [imgData];
+    let ref = null;
+    for (let n=0; n<list.length; n++) {
+      ref = await addDoc(collection(db,"qr_items"), {
+        ...qrDocData,
+        imageData: list[n],
+        label: list.length>1 ? `${lbl}-${n+1}` : lbl,
+        seq: Date.now()*1000+n,
+      });
+    }
 
     // メンバーの場合、売れた商品画像をsold_imagesに保存
     if (!isMaster && soldImg) {
@@ -1120,11 +1249,11 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[], invItems=[
       });
     }
 
-    await addDoc(collection(db,"qr_log"),{userName:user.name,action:"QR登録",detail:`登録: ${lbl} [${cat}]`,createdAt:serverTimestamp()});
-    showToast(`「${lbl}」を登録しました`);
+    await addDoc(collection(db,"qr_log"),{userName:user.name,action:"QR登録",detail:`登録: ${lbl}${list.length>1?` 他${list.length}枚`:""} [${cat}]${qrDocData.invCategory?` 商品カテゴリ:${qrDocData.invCategory}`:""}`,createdAt:serverTimestamp()});
+    showToast(list.length>1?`${list.length}枚を登録しました`:`「${lbl}」を登録しました`);
 
     // フォームリセット
-    setLabel(""); setCatInput(""); setPreview(null); setImgData(null);
+    setLabel(""); setCatInput(""); setPreview(null); setImgData(null); setImgList([]); setInvCat("");
     setSoldImg(null); setSoldPrev(null);
     setFormData({productName:"",datetime:new Date().toISOString().slice(0,16),quantity:"",amount:"",genre:""});
     setErrors({});
@@ -1151,7 +1280,7 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[], invItems=[
             {preview?<img src={preview} style={{maxHeight:120,maxWidth:"100%",borderRadius:8}}/>
               :<div style={{textAlign:"center"}}><div style={{fontSize:32,marginBottom:4}}>📷</div><p style={{color:C.muted,fontSize:12}}>QRコード画像をアップロード</p></div>}
           </div>
-          <input ref={fileRef} type="file" accept="image/*" onChange={handleQRFile} style={{display:"none"}}/>
+          <input ref={fileRef} type="file" accept="image/*" multiple={isMaster} onChange={handleQRFile} style={{display:"none"}}/>
           {errors.qrImage&&<p style={{fontSize:11,color:C.red,marginTop:3}}>⚠️ {errors.qrImage}</p>}
         </div>
 
@@ -1189,6 +1318,17 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[], invItems=[
           {errors.category&&<p style={{fontSize:11,color:C.red,marginTop:3}}>⚠️ {isMaster?"カテゴリ":"発送方法"}を選択してください</p>}
           {!isMaster&&<p style={{fontSize:11,color:C.muted,marginTop:4}}>※ ネコポス・ゆうパケットプラス・60cm発送のみ登録できます</p>}
         </div>
+
+        {/* 商品カテゴリ（QR管理用） */}
+        {isMaster&&<div style={{marginBottom:14}}>
+          <label style={labelS}>商品カテゴリ（QR管理用）</label>
+          <select value={invCat} onChange={e=>setInvCat(e.target.value)} style={inputS}>
+            <option value="">未設定</option>
+            {catOptions.map(c=><option key={c} value={c}>{c}</option>)}
+          </select>
+          <p style={{fontSize:11,color:C.muted,marginTop:4}}>※ 登録した古い順に、そのカテゴリの商品を選んだ時に表示されます</p>
+          {imgList.length>1&&<p style={{fontSize:11,color:C.green,marginTop:3,fontWeight:700}}>📚 {imgList.length}枚を選択順に連続登録します</p>}
+        </div>}
 
         {/* ラベル名 - マスターのみ表示 */}
         {isMaster&&<div style={{marginBottom:14}}>
@@ -1254,7 +1394,7 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[], invItems=[
               <img src={item.imageData} style={{width:40,height:40,objectFit:"contain",borderRadius:6,background:"#fff",padding:2}}/>
               <div style={{flex:1,minWidth:0}}>
                 <p style={{fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.label}</p>
-                {item.category&&<p style={{fontSize:10,color:C.accent}}>{item.category}</p>}
+                {item.category&&<p style={{fontSize:10,color:C.accent}}>{item.category}{item.invCategory?` ／ 🏷 ${item.invCategory}`:""}</p>}
                 <p style={{fontSize:10,color:C.muted}}>{tsToStr(item.uploadedAt)}</p>
               </div>
               <span style={{fontSize:11,fontWeight:600,padding:"2px 9px",borderRadius:20,background:item.status==="read"?C.greenDim:item.status==="shipped"?C.purpleDim:C.surface,color:item.status==="read"?C.green:item.status==="shipped"?C.purple:C.muted,border:`1px solid ${item.status==="read"?C.greenBorder:item.status==="shipped"?C.purpleBorder:C.border}`,whiteSpace:"nowrap"}}>
@@ -1269,7 +1409,7 @@ function QRUploader({ qrItems, user, showToast, isMaster, members=[], invItems=[
 }
 
 
-function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly=false, members=[], onShip=null, soldImageMap={}, onRevertUnread=null }) {
+function QRList({ items, user, isMaster, can=()=>false, onSelect, onDelete, onRelease, readOnly=false, members=[], onShip=null, soldImageMap={}, onRevertUnread=null, orderMap={}, invCategories=[] }) {
   const [filterCat,    setFilterCat]    = useState("すべて");
   const [filterMember, setFilterMember] = useState("すべて");
   const cats = ["すべて",...new Set(items.map(i=>i.category).filter(Boolean))].sort();
@@ -1281,12 +1421,14 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
   const [editLabel, setEditLabel] = useState("");
   const [editCat,   setEditCat]   = useState("");
   const [editMember,setEditMember]= useState("");
+  const [editInvCat,setEditInvCat]= useState("");
 
   async function saveEdit(itemId) {
     await updateDoc(doc(db,"qr_items",itemId),{
       label:   editLabel.trim()||"QR",
       category:editCat.trim()||"未分類",
       assignedMember: editMember||null,
+      invCategory: editInvCat||null,
     });
     setEditId(null);
   }
@@ -1295,10 +1437,17 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
   return (
     <div>
       {/* マスター編集モーダル */}
-      {editId&&isMaster&&(
+      {editId&&can("qr_edit")&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:20,padding:24,width:"100%",maxWidth:400,border:`1px solid ${C.border}`,boxShadow:"0 24px 64px rgba(0,0,0,0.6)"}}>
             <h3 style={{fontSize:16,fontWeight:700,marginBottom:16}}>✏️ QRコードを編集</h3>
+            <div style={{marginBottom:12}}>
+              <label style={labelS}>商品カテゴリ（QR管理用）</label>
+              <select value={editInvCat} onChange={e=>setEditInvCat(e.target.value)} style={inputS}>
+                <option value="">未設定</option>
+                {invCategories.map(c=><option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
             <div style={{marginBottom:12}}>
               <label style={labelS}>ラベル名</label>
               <input value={editLabel} onChange={e=>setEditLabel(e.target.value)} style={inputS} placeholder="例: 荷物001"/>
@@ -1360,10 +1509,11 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
                 <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:2}}>
                   <p style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.label}</p>
                   {item.category&&<span style={{fontSize:10,fontWeight:600,padding:"1px 7px",borderRadius:20,background:C.accentDim,color:C.accent,border:`1px solid ${C.accentBorder}`,whiteSpace:"nowrap",flexShrink:0}}>{item.category}</span>}
+                  {item.invCategory&&<span style={{fontSize:10,fontWeight:600,padding:"1px 7px",borderRadius:20,background:C.greenDim,color:C.green,border:`1px solid ${C.greenBorder}`,whiteSpace:"nowrap",flexShrink:0}}>🏷 {item.invCategory}{orderMap[item.id]?` ・${orderMap[item.id]}番目`:""}</span>}
                   {item.assignedMember&&isMaster&&<span style={{fontSize:10,fontWeight:600,padding:"1px 7px",borderRadius:20,background:C.purpleDim,color:C.purple,border:`1px solid ${C.purpleBorder}`,whiteSpace:"nowrap",flexShrink:0}}>👤 {item.assignedMember}</span>}
                 </div>
                 <p style={{fontSize:11,color:C.muted}}>{tsToStr(item.uploadedAt)}</p>
-                {isLockedByOther&&<p style={{fontSize:11,color:C.red,marginTop:2}}>🔒 {item.lockedBy} が使用中</p>}
+                {isLockedByOther&&<p style={{fontSize:11,color:C.red,marginTop:2}}>🔒 {item.lockedBy} が使用中{isMaster&&item.claimProduct?`（${item.claimProduct}）`:""}</p>}
                 {isLockedByMe&&<p style={{fontSize:11,color:C.orange,marginTop:2}}>✏️ あなたが選択中</p>}
                 {item.status==="read"&&item.formData?.memberName&&<p style={{fontSize:11,color:C.green,marginTop:2}}>✅ {item.formData.memberName} が読み込み済</p>}
               {item.status==="read"&&soldImageMap[item.id]&&(
@@ -1378,8 +1528,8 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
                 {!readOnly&&onSelect&&<button onClick={()=>onSelect(item)} disabled={isLockedByOther} style={{padding:"7px 14px",background:isLockedByOther?C.surface2:isLockedByMe?C.orangeDim:C.accentDim,color:isLockedByOther?C.faint:isLockedByMe?C.orange:C.accent,border:`1px solid ${isLockedByOther?C.border:isLockedByMe?C.orangeBorder:C.accentBorder}`,borderRadius:8,fontSize:12,fontWeight:700,cursor:isLockedByOther?"not-allowed":"pointer"}}>
                   {isLockedByMe?"再開":"選択"}
                 </button>}
-                {isMaster&&!readOnly&&isLockedByOther&&<button onClick={()=>onRelease(item)} style={{padding:"5px 10px",background:C.orangeDim,color:C.orange,border:`1px solid ${C.orangeBorder}`,borderRadius:8,fontSize:11}}>🔓 解除</button>}
-                {isMaster&&item.status==="unread"&&(
+                {can("qr_release")&&!readOnly&&isLockedByOther&&<button onClick={()=>onRelease(item)} style={{padding:"5px 10px",background:C.orangeDim,color:C.orange,border:`1px solid ${C.orangeBorder}`,borderRadius:8,fontSize:11}}>🔓 解除</button>}
+                {can("qr_edit")&&item.status==="unread"&&(
                   <button
                     type="button"
                     onClick={(e)=>{
@@ -1388,6 +1538,7 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
                       setEditLabel(item.label||"");
                       setEditCat(item.category||"");
                       setEditMember(item.assignedMember||"");
+                      setEditInvCat(item.invCategory||"");
                     }}
                     style={{padding:"5px 10px",background:C.accentDim,color:C.accent,border:`1px solid ${C.accentBorder}`,borderRadius:8,fontSize:11,cursor:"pointer"}}
                   >✏️ 編集</button>
@@ -1404,7 +1555,7 @@ function QRList({ items, user, isMaster, onSelect, onDelete, onRelease, readOnly
                     ↩ 未読みに戻す
                   </button>
                 )}
-                {(isMaster||(item.registeredBy===user?.name&&item.status==="unread"))&&(
+                {(can("qr_delete")||(item.registeredBy===user?.name&&item.status==="unread"))&&(
                   <button onClick={()=>onDelete(item)} style={{padding:"5px 10px",background:C.redDim,color:C.red,border:`1px solid ${C.redBorder}`,borderRadius:8,fontSize:11}}>
                     {isMaster?"🗑":"🗑"}
                   </button>
@@ -1720,7 +1871,7 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[], 
   const [showQR,    setShowQR]    = useState(false);
   const [checked,   setChecked]   = useState(false);
   const [soldImage, setSoldImage] = useState(null);
-  const [selItemId, setSelItemId] = useState("");
+  const [selItemId, setSelItemId] = useState(item.claimProductId||"");
 
   // メンバーが登録したQRかどうか
   const isMemberRegistered = item.registeredRole==="member" && !!item.registeredBy;
@@ -1730,10 +1881,10 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[], 
   // prefilledDataがあれば自動入力
   const prefilled = item.prefilledData||null;
   const [form, setForm] = useState({
-    productName: prefilled?.productName||"",
+    productName: prefilled?.productName||item.claimProduct||"",
     datetime:    prefilled?.datetime||new Date().toISOString().slice(0,16),
     quantity:    prefilled?.quantity||"",
-    genre:       prefilled?.genre||"",
+    genre:       prefilled?.genre||((invItems.find(i=>i.id===item.claimProductId)||{}).category)||"",
     memberName:  prefilled?.memberName||user.name,
     amount:      prefilled?.amount||""
   });
@@ -1781,6 +1932,11 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[], 
 
       <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:20}}>
 
+        {item.claimProduct&&(
+          <div style={{background:C.accentDim,border:`1px solid ${C.accentBorder}`,borderRadius:10,padding:"8px 12px",marginBottom:14}}>
+            <p style={{fontSize:12,color:C.accent,fontWeight:700}}>🏷 「{item.claimProduct}」用に自動割当{item.invCategory?`（${item.invCategory}${item.autoOrder?` の ${item.autoOrder}番目に登録されたQR`:""}）`:""}</p>
+          </div>
+        )}
         {/* ── 表示のみモード（マスターがメンバー登録QRを読む時） ── */}
         {readOnlyMode?(
           <div>
@@ -2048,6 +2204,153 @@ function SalesApp({ qrItems, members, user, isMaster }) {
 // ═══════════════════════════════════════════════════════════════════
 // SHARED HELPERS
 // ═══════════════════════════════════════════════════════════════════
+function PermModal({ member, close, showToast }) {
+  const [perms,  setPerms]  = useState({...resolvePerms(member)});
+  const [preset, setPreset] = useState(member.permPreset||(member.permissions?"custom":"standard"));
+  function applyPreset(id) {
+    const o={}; PERM_PRESETS[id].keys.forEach(k=>{o[k]=true;});
+    setPerms(o); setPreset(id);
+  }
+  function toggle(k) { setPerms(p=>({...p,[k]:!p[k]})); setPreset("custom"); }
+  async function save() {
+    await updateDoc(doc(db,"members",member.id),{permissions:perms,permPreset:preset});
+    showToast(`${member.name} の権限を保存しました`);
+    close();
+  }
+  return (
+    <Overlay onClose={close}>
+      <h2 style={{fontFamily:"'Sora',sans-serif",fontSize:18,fontWeight:700,marginBottom:4}}>🔐 権限設定</h2>
+      <p style={{fontSize:12,color:C.muted,marginBottom:14}}>{member.name} さんが使える機能を選びます</p>
+      <label style={labelS}>プリセット</label>
+      <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16}}>
+        {Object.keys(PERM_PRESETS).map(id=>(
+          <button key={id} type="button" onClick={()=>applyPreset(id)} style={{padding:"5px 12px",fontSize:12,border:`1px solid ${preset===id?C.accent:C.border}`,borderRadius:20,background:preset===id?C.accentDim:C.surface2,color:preset===id?C.accent:C.muted,fontWeight:preset===id?700:400}}>{PERM_PRESETS[id].label}</button>
+        ))}
+        {preset==="custom"&&<span style={{padding:"5px 12px",fontSize:12,border:`1px solid ${C.purpleBorder}`,borderRadius:20,background:C.purpleDim,color:C.purple,fontWeight:700}}>🎛 カスタム</span>}
+      </div>
+      {PERM_GROUPS.map(g=>(
+        <div key={g.title} style={{marginBottom:14}}>
+          <p style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:6}}>{g.title}</p>
+          <div style={{background:C.surface2,borderRadius:12,border:`1px solid ${C.border}`,overflow:"hidden"}}>
+            {g.items.map(([k,label],i)=>(
+              <div key={k} onClick={()=>toggle(k)} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderTop:i>0?`1px solid ${C.border}`:"none",cursor:"pointer"}}>
+                <div style={{width:38,height:22,borderRadius:20,background:perms[k]?C.green:C.border,position:"relative",flexShrink:0,transition:"background 0.15s"}}>
+                  <div style={{position:"absolute",top:2,left:perms[k]?18:2,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"left 0.15s"}}/>
+                </div>
+                <span style={{fontSize:13,color:perms[k]?C.text:C.muted}}>{label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      <div style={{display:"flex",gap:10,marginTop:8}}>
+        <button onClick={close} style={{flex:1,padding:"11px",background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10,fontSize:14,color:C.muted}}>キャンセル</button>
+        <button onClick={save} style={{flex:2,padding:"11px",background:C.accent,color:"#fff",border:"none",borderRadius:10,fontWeight:700,fontSize:14}}>保存する</button>
+      </div>
+    </Overlay>
+  );
+}
+
+function AutoPickPanel({ invItems, getCandidates, orderMap, onPick }) {
+  const [busy, setBusy] = useState(false);
+  async function choose(id) {
+    const product = invItems.find(i=>i.id===id);
+    if (!product) return;
+    setBusy(true);
+    try { await onPick(product); } finally { setBusy(false); }
+  }
+  return (
+    <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.accentBorder}`,padding:16,marginBottom:14}}>
+      <p style={{fontSize:13,fontWeight:700,marginBottom:4}}>🏷 商品を選ぶ（そのカテゴリの一番古いQRを表示）</p>
+      <p style={{fontSize:11,color:C.muted,marginBottom:10}}>商品を選ぶと登録画面が開き、他の人と重ならないQRがあなた専用になります。シールもその順番で探せます。</p>
+      <select value="" disabled={busy} onChange={e=>choose(e.target.value)} style={inputS}>
+        <option value="">{busy?"QRを確保中...":"商品を選択してください"}</option>
+        {invItems.map(i=>{
+          const n=getCandidates(i).length;
+          return <option key={i.id} value={i.id} disabled={n===0}>{i.category?`[${i.category}] `:""}{i.name}（QR残り{n}枚）</option>;
+        })}
+      </select>
+    </div>
+  );
+}
+
+function QRCategoryManager({ qrItems, invItems, can, onRelease, showToast }) {
+  const pool = qrItems.filter(i=>i.registeredRole!=="member");
+  const cats = [...new Set([...invItems.map(i=>i.category).filter(Boolean),...pool.map(i=>i.invCategory).filter(Boolean)])].sort();
+  const allCats = [...cats,"__none"];
+  const catOptions = [...new Set([...cats,...GENRES])];
+  const [open,setOpen] = useState(null);
+
+  async function setCat(item,val) {
+    await updateDoc(doc(db,"qr_items",item.id),{invCategory:val||null});
+    showToast("カテゴリを変更しました");
+  }
+  function Row({ item, no, right, sub, hi=false }) {
+    return (
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:hi?C.greenDim:C.surface2,borderRadius:10,border:`1px solid ${hi?C.greenBorder:C.border}`}}>
+        {no!=null&&<span style={{fontSize:11,fontWeight:700,color:hi?C.green:C.muted,minWidth:26}}>#{no}</span>}
+        <ZoomableImage src={item.imageData} style={{width:40,height:40,objectFit:"contain",borderRadius:6,background:"#fff",padding:2,flexShrink:0}} label={item.label}/>
+        <div style={{flex:1,minWidth:0}}>
+          <p style={{fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.label}</p>
+          <p style={{fontSize:10,color:C.muted}}>{sub}</p>
+        </div>
+        {right}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p style={{fontSize:12,color:C.muted,marginBottom:12}}>商品カテゴリごとのQRの残り・使用中・使用済みを確認できます。未使用は登録が古い順に使われます。</p>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {allCats.map(c=>{
+          const mine   = pool.filter(i=>c==="__none"?!i.invCategory:i.invCategory===c);
+          const unused = mine.filter(i=>i.status==="unread"&&!i.lockedBy).sort((a,b)=>qrKey(a)-qrKey(b));
+          const inUse  = mine.filter(i=>i.status==="unread"&&i.lockedBy);
+          const used   = mine.filter(i=>i.status!=="unread").sort((a,b)=>qrKey(b)-qrKey(a));
+          if (c==="__none"&&mine.length===0) return null;
+          const isOpen = open===c;
+          return (
+            <div key={c} style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,overflow:"hidden"}}>
+              <div onClick={()=>setOpen(isOpen?null:c)} style={{display:"flex",alignItems:"center",gap:8,padding:"12px 14px",cursor:"pointer",flexWrap:"wrap"}}>
+                <span style={{fontSize:14,fontWeight:700,flex:1,minWidth:100}}>{c==="__none"?"カテゴリ未設定":c}</span>
+                <span style={{fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:20,background:unused.length===0?C.redDim:C.greenDim,color:unused.length===0?C.red:C.green,border:`1px solid ${unused.length===0?C.redBorder:C.greenBorder}`}}>未使用 {unused.length}</span>
+                <span style={{fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:20,background:C.orangeDim,color:C.orange,border:`1px solid ${C.orangeBorder}`}}>使用中 {inUse.length}</span>
+                <span style={{fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:20,background:C.surface2,color:C.muted,border:`1px solid ${C.border}`}}>使用済 {used.length}</span>
+                <span style={{color:C.muted,fontSize:12}}>{isOpen?"▲":"▼"}</span>
+              </div>
+              {isOpen&&(
+                <div style={{padding:"0 14px 14px",display:"flex",flexDirection:"column",gap:8}}>
+                  {inUse.length>0&&<p style={{fontSize:11,fontWeight:700,color:C.orange}}>🔒 使用中（誰がどのQRを読み取り中か）</p>}
+                  {inUse.map(i=>(
+                    <Row key={i.id} item={i} sub={`👤 ${i.lockedBy}${i.claimProduct?` ／ 商品: ${i.claimProduct}`:""}${i.claimedAt?` ／ ${tsToStr(i.claimedAt)}`:""}`}
+                      right={can("qr_release")&&<button type="button" onClick={()=>onRelease(i)} style={{padding:"5px 10px",background:C.orangeDim,color:C.orange,border:`1px solid ${C.orangeBorder}`,borderRadius:8,fontSize:11}}>🔓 解除</button>}/>
+                  ))}
+                  <p style={{fontSize:11,fontWeight:700,color:C.green,marginTop:4}}>⏳ 未使用（古い順＝使われる順）</p>
+                  {unused.length===0&&<p style={{fontSize:12,color:C.muted}}>未使用のQRはありません</p>}
+                  {unused.map((i,n)=>(
+                    <Row key={i.id} item={i} no={n+1} hi={n===0&&c!=="__none"} sub={`登録 ${tsToStr(i.uploadedAt)}${i.assignedMember&&can("qr_edit")?` ／ 👤 ${i.assignedMember}専用`:""}${n===0&&c!=="__none"?" ／ 次に使われます":""}`}
+                      right={can("qr_edit")&&(
+                        <select value={i.invCategory||""} onChange={e=>setCat(i,e.target.value)} style={{...inputS,width:"auto",padding:"5px 8px",fontSize:11}}>
+                          <option value="">未設定</option>
+                          {catOptions.map(o=><option key={o} value={o}>{o}</option>)}
+                        </select>
+                      )}/>
+                  ))}
+                  {used.length>0&&<p style={{fontSize:11,fontWeight:700,color:C.muted,marginTop:4}}>✅ 使用済み（新しい順・最大20件）</p>}
+                  {used.slice(0,20).map(i=>(
+                    <Row key={i.id} item={i} sub={`${i.formData?.memberName||i.lockedBy||""} ／ ${i.formData?.productName||i.claimProduct||""} ／ ${i.status==="read"?"読込済":i.status==="shipped"?"発送完了":"取引完了"}`}/>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function Overlay({ children, onClose }) {
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
