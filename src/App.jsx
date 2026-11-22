@@ -1,4 +1,4 @@
-// @version 9.2 - 2026-11-22
+// @version 9.3 - 2026-11-22
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -913,7 +913,17 @@ function QRApp({ qrItems, qrLog, members, user, isMaster: isMasterRole, can, sho
         return am!==bm ? am-bm : qrKey(a)-qrKey(b);
       });
   }
+  // メンバーが在庫を「－」した数 − すでに選択したQRの数 = まだ選択できる回数
+  function remainingFor(product) {
+    if (isMasterRole) return Infinity;
+    const minus = invHist
+      .filter(h=>h.userId===user.id&&h.itemId===product.id&&h.delta<0)
+      .reduce((n,h)=>n+Math.abs(h.delta),0);
+    const used = qrItems.filter(i=>i.claimProductId===product.id&&(i.claimedBy||i.lockedBy||(i.formData&&i.formData.memberName))===user.name).length;
+    return Math.max(0,minus-used);
+  }
   async function handleAutoPick(product) {
+    if (remainingFor(product)<=0) { showToast("在庫を減らした数だけ選択できます（この商品は選択済みです）",C.red); return; }
     const cands = getCandidates(product);
     let picked = null;
     for (const c of cands) {
@@ -924,7 +934,7 @@ function QRApp({ qrItems, qrLog, members, user, isMaster: isMasterRole, can, sho
           if (!snap.exists()) return false;
           const d = snap.data();
           if (d.status!=="unread" || (d.lockedBy&&d.lockedBy!==user.name)) return false;
-          tx.update(ref,{lockedBy:user.name,claimProduct:product.name,claimProductId:product.id,claimedAt:serverTimestamp()});
+          tx.update(ref,{lockedBy:user.name,claimedBy:user.name,claimProduct:product.name,claimProductId:product.id,claimedAt:serverTimestamp()});
           return true;
         });
         if (ok) { picked=c; break; }
@@ -982,7 +992,7 @@ function QRApp({ qrItems, qrLog, members, user, isMaster: isMasterRole, can, sho
     setTab(isMaster?"read":"myread");
   }
   async function handleCancel() {
-    await updateDoc(doc(db,"qr_items",selectedItem.id),{lockedBy:null,claimProduct:null,claimProductId:null,claimedAt:null});
+    await updateDoc(doc(db,"qr_items",selectedItem.id),{lockedBy:null,claimedBy:null,claimProduct:null,claimProductId:null,claimedAt:null});
     setSelected(null);
   }
   async function handleDelete(item) {
@@ -992,7 +1002,7 @@ function QRApp({ qrItems, qrLog, members, user, isMaster: isMasterRole, can, sho
     showToast("削除しました",C.red);
   }
   async function handleRelease(item) {
-    await updateDoc(doc(db,"qr_items",item.id),{lockedBy:null,claimProduct:null,claimProductId:null,claimedAt:null});
+    await updateDoc(doc(db,"qr_items",item.id),{lockedBy:null,claimedBy:null,claimProduct:null,claimProductId:null,claimedAt:null});
     await addDoc(collection(db,"qr_log"),{userName:user.name,action:"ロック解除",detail:`強制解除: ${item.label}`,createdAt:serverTimestamp()});
     showToast("ロックを解除しました",C.orange);
   }
@@ -1005,7 +1015,7 @@ function QRApp({ qrItems, qrLog, members, user, isMaster: isMasterRole, can, sho
   }
 
   async function handleRevertToUnread(item, targetMember) {
-    await updateDoc(doc(db,"qr_items",item.id),{status:"unread",lockedBy:null,formData:null,readAt:null,assignedMember:targetMember||null});
+    await updateDoc(doc(db,"qr_items",item.id),{status:"unread",lockedBy:null,formData:null,readAt:null,assignedMember:targetMember||null,claimedBy:null,claimProduct:null,claimProductId:null,claimedAt:null});
     await addDoc(collection(db,"qr_log"),{userName:user.name,action:"未読み込みに戻す",detail:`${item.label}（対象: ${targetMember||"全員"}）`,createdAt:serverTimestamp()});
     showToast("未読み込みに戻しました",C.orange);
   }
@@ -1112,7 +1122,7 @@ function QRApp({ qrItems, qrLog, members, user, isMaster: isMasterRole, can, sho
       </div>
 
       {tab==="upload"&&<QRUploader qrItems={isMaster?qrItems:visibleQRs} user={user} showToast={showToast} isMaster={can("qr_register_free")} members={members} invItems={myInvItems}/>}
-      {tab==="unread"&&<AutoPickPanel invItems={myInvItems} getCandidates={getCandidates} orderMap={orderMap} onPick={handleAutoPick}/>}
+      {tab==="unread"&&<AutoPickPanel invItems={myInvItems} getCandidates={getCandidates} remainingFor={remainingFor} onPick={handleAutoPick}/>}
       {tab==="unread"&&!isMaster&&myPendingItems.length>0&&<div style={{marginBottom:6}}><p style={{fontSize:12,fontWeight:700,color:C.orange,marginBottom:8}}>✏️ 選択中・自分が登録したQR</p><QRList items={myPendingItems} user={user} isMaster={false} can={can} onSelect={handleSelect} onDelete={handleDelete} onRelease={handleRelease} members={members} orderMap={orderMap}/></div>}
       {tab==="unread"&&isMaster&&<QRList items={unreadItems} user={user} isMaster={isMaster} can={can} onSelect={handleSelect} onDelete={handleDelete} onRelease={handleRelease} members={members} orderMap={orderMap} invCategories={[...new Set([...invItems.map(i=>i.category).filter(Boolean),...GENRES])]}/>}
       {tab==="read"&&isMaster&&<QRList items={allReadItems} user={user} isMaster={isMaster} can={can} readOnly onDelete={handleDelete} onRelease={handleRelease} members={members} onShip={can("qr_ship")?handleShip:null} soldImageMap={soldImageMap} onRevertUnread={can("qr_revert")?handleRevertUnreadModal:null}/>}
@@ -1883,7 +1893,7 @@ function QRFormView({ item, user, onSave, onCancel, invItems=[], invHistory=[], 
   const [form, setForm] = useState({
     productName: prefilled?.productName||item.claimProduct||"",
     datetime:    prefilled?.datetime||new Date().toISOString().slice(0,16),
-    quantity:    prefilled?.quantity||"",
+    quantity:    prefilled?.quantity||(item.claimProduct?1:""),
     genre:       prefilled?.genre||((invItems.find(i=>i.id===item.claimProductId)||{}).category)||"",
     memberName:  prefilled?.memberName||user.name,
     amount:      prefilled?.amount||""
@@ -2251,7 +2261,7 @@ function PermModal({ member, close, showToast }) {
   );
 }
 
-function AutoPickPanel({ invItems, getCandidates, orderMap, onPick }) {
+function AutoPickPanel({ invItems, getCandidates, remainingFor, onPick }) {
   const [busy, setBusy] = useState(false);
   async function choose(id) {
     const product = invItems.find(i=>i.id===id);
@@ -2262,12 +2272,14 @@ function AutoPickPanel({ invItems, getCandidates, orderMap, onPick }) {
   return (
     <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.accentBorder}`,padding:16,marginBottom:14}}>
       <p style={{fontSize:13,fontWeight:700,marginBottom:4}}>🏷 商品を選ぶ（そのカテゴリの一番古いQRを表示）</p>
-      <p style={{fontSize:11,color:C.muted,marginBottom:10}}>商品を選ぶと登録画面が開き、他の人と重ならないQRがあなた専用になります。シールもその順番で探せます。</p>
+      <p style={{fontSize:11,color:C.muted,marginBottom:10}}>在庫を「－」した数だけ選べます（選ぶたびに1回消費）。選ぶと登録画面が開き、他の人と重ならないQRがあなた専用になります。</p>
       <select value="" disabled={busy} onChange={e=>choose(e.target.value)} style={inputS}>
         <option value="">{busy?"QRを確保中...":"商品を選択してください"}</option>
         {invItems.map(i=>{
           const n=getCandidates(i).length;
-          return <option key={i.id} value={i.id} disabled={n===0}>{i.category?`[${i.category}] `:""}{i.name}（QR残り{n}枚）</option>;
+          const r=remainingFor(i);
+          const rt=r===Infinity?"":`／選択可能${r}回`;
+          return <option key={i.id} value={i.id} disabled={n===0||r<=0}>{i.category?`[${i.category}] `:""}{i.name}（QR残り{n}枚{rt}）</option>;
         })}
       </select>
     </div>
