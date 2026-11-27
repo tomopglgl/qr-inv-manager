@@ -1,4 +1,4 @@
-// @version 9.3 - 2026-11-22
+// @version 9.4 - 2026-11-28
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -88,6 +88,81 @@ function permLabel(m) {
 }
 // QRの登録順キー（小さいほど古い）
 function qrKey(i) { return i.seq || ((i.uploadedAt&&i.uploadedAt.seconds?i.uploadedAt.seconds:0)*1000); }
+// ── アプリ内マニュアル（メンバー向け）──
+const MANUAL_SECTIONS = [
+  { id:"start", icon:"🔐", title:"ログイン・基本", body:[
+    ["h","ログイン"],
+    ["s","マスターから教えてもらった「ユーザー名」と「パスワード」を入力して「ログイン」を押します。"],
+    ["h","画面の見方"],
+    ["s","上のボタンで「🗃 在庫管理」「📷 QR発送」「💰 売上」を切り替えます。"],
+    ["s","右上の 🔔 は通知です。赤い数字がある時は新しいお知らせがあります。"],
+    ["n","ホーム画面に追加すると、アプリのように使えます（iPhone：共有ボタン →「ホーム画面に追加」）。"],
+  ]},
+  { id:"inv", icon:"🗃", title:"在庫管理（在庫を減らす）", body:[
+    ["h","在庫を減らす"],
+    ["s","商品カードの「－」を押すと、在庫が1つ減ります。在庫が0の時は押せません。"],
+    ["n","⚠️ 「－」を押した数が、あとでQRを選べる回数になります。使う時は忘れずに押してください。"],
+    ["h","色のサイン"],
+    ["s","🔴 在庫ゼロ ／ 🟡 要補充（少なくなっています）"],
+    ["h","商品の詳細・履歴"],
+    ["s","商品名を押すと詳細が開きます。下の「履歴」では自分の操作を確認できます。"],
+    ["h","配送方法の表示"],
+    ["s","商品カードにその商品の発送方法（ネコポスなど）が表示されます。"],
+    ["n","「＋」や商品の追加・編集などは、マスターから権限をもらった人だけ表示されます。"],
+  ]},
+  { id:"qr", icon:"📷", title:"QR発送の流れ", body:[
+    ["h","全体の流れ"],
+    ["s","① 在庫を「－」で減らす → ② 商品を選ぶ → ③ 情報を入力 → ④ QRを表示して読み込み → ⑤ 保存 → ⑥ 発送完了 → ⑦ 取引完了"],
+    ["h","① 在庫を減らす"],
+    ["s","「在庫管理」で、売れた商品の「－」を押します。"],
+    ["h","② 商品を選ぶ（QR発送 →「未読み込み」）"],
+    ["s","「商品を選択してください」から売れた商品を選びます。"],
+    ["s","商品名の横に「QR残り○枚／選択可能○回」が出ます。「－」で減らした数だけ選べます。"],
+    ["s","選ぶと、その商品のカテゴリの「一番古く登録されたQR」が自動で割り当てられ、登録画面が開きます。"],
+    ["n","割り当てられたQRはあなた専用です。他の人と重なりません。シールは、登録された古い順に探してください。"],
+    ["h","③ 情報を入力"],
+    ["s","「売れた商品の画像」を追加します（必須。画像がないとQRを表示できません）。"],
+    ["s","商品名・売れた年月日時・個数・金額・カテゴリを入力します。選んだ商品の情報は先に入っています。"],
+    ["h","④ QRコードを表示して読み込み"],
+    ["s","「🔍 QRコードを表示」を押すとQRが出ます。タップで拡大できます。"],
+    ["s","読み込みが終わったら「読み込みチェック完了」にチェックを入れます。"],
+    ["h","⑤ 保存"],
+    ["s","「💾 保存して完了」を押します。Excel（CSV）が自動でダウンロードされ、「読み込み済」タブに移ります。"],
+    ["h","⑥ 発送完了（マスターが操作）"],
+    ["s","マスターが発送すると「発送完了」タブに移り、通知が届きます。"],
+    ["h","⑦ 取引完了（あなたが操作）"],
+    ["s","取引が終わったら、「発送完了」タブで該当の商品の「🎉 取引完了」を押します。「取引完了」タブに移ります。"],
+    ["n","途中で戻る時は「← 戻る」を押します。割り当てたQRは解除され、選択した回数も戻ります。"],
+    ["n","途中で画面を閉じた時は、「未読み込み」タブの上に「選択中」と出るので、「再開」で続けられます。"],
+  ]},
+  { id:"reg", icon:"📦", title:"QRを自分で登録する", body:[
+    ["h","登録できる発送方法"],
+    ["s","ネコポス・ゆうパケットプラス・60cm発送のQRを登録できます。"],
+    ["h","登録の手順"],
+    ["s","「QR登録」タブで、QR画像・売れた商品の画像・発送方法・商品名・売れた年月日時・個数・金額・カテゴリを入力して「📦 登録する」を押します。"],
+    ["n","★の項目は必須です。入力が足りないと登録できず、警告が出ます。"],
+    ["s","自分で登録したQRは、マスターと自分だけが見られます。「未読み込み」タブの上に表示されるので、そこから選んで読み込みます。"],
+  ]},
+  { id:"sales", icon:"💰", title:"売上の見方", body:[
+    ["s","「💰 売上」では、自分が読み込んだ分の合計金額・件数・明細を確認できます。"],
+    ["s","期間は「全期間／今月／今日」で切り替えられます。"],
+    ["s","「📥 Excelダウンロード」で、自分のデータをCSVで保存できます（Excelやスプレッドシートで開けます）。"],
+    ["n","他のメンバーの売上は表示されません（マスターから権限がある場合を除く）。"],
+  ]},
+  { id:"faq", icon:"❓", title:"困った時は", body:[
+    ["h","商品が表示されない"],
+    ["s","マスターの公開設定で、表示される商品が決まっています。マスターに確認してください。"],
+    ["h","商品が選べない（グレーになっている）"],
+    ["s","「選択可能0回」の時は、在庫を「－」で減らしていないか、すでに選び終えています。「QR残り0枚」の時は、そのカテゴリのQRがありません。マスターに伝えてください。"],
+    ["h","QRが使用中と出る"],
+    ["s","他の人が選択中です。しばらく待つか、マスターに確認してください。"],
+    ["h","データが更新されない"],
+    ["s","画面を再読み込みしてください（リアルタイムで同期されています）。"],
+    ["h","ログインできない"],
+    ["s","ユーザー名・パスワードをマスターに確認してください。"],
+  ]},
+];
+
 const UNIT_PRESETS = ["個","枚","本","冊","箱","袋","缶","kg","g","L","ml","セット","台","足"];
 function genId()  { return Math.random().toString(36).slice(2)+Date.now().toString(36); }
 function tsToStr(ts) {
@@ -268,6 +343,7 @@ export default function App() {
   const [qrItems,  setQrItems]  = useState([]);
   const [qrLog,    setQrLog]    = useState([]);
   const [soldImageMap, setSoldImageMap] = useState({});
+  const [showManual, setShowManual] = useState(false);
 
   if (!IS_CONFIGURED) return <SetupScreen />;
 
@@ -348,6 +424,8 @@ export default function App() {
         </div>
       )}
 
+      {showManual&&<ManualModal onClose={()=>setShowManual(false)}/>}
+
       {showBell&&(
         <NoticePanel
           notices={notices.filter(n=>n.targetRole==="all"||n.targetRole===user.role)}
@@ -372,6 +450,7 @@ export default function App() {
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <button onClick={()=>setShowManual(true)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 10px",fontSize:12,color:C.muted}}>📖 使い方</button>
           <button onClick={()=>{setShowBell(v=>!v);if(!showBell)markAllRead();}} style={{position:"relative",background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 10px",fontSize:15,color:C.muted}}>
             🔔
             {unreadCount>0&&<span style={{position:"absolute",top:-6,right:-6,background:C.red,color:"#fff",fontSize:9,fontWeight:700,width:17,height:17,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",animation:"pulse 1.5s infinite"}}>{unreadCount>9?"9+":unreadCount}</span>}
@@ -2214,6 +2293,42 @@ function SalesApp({ qrItems, members, user, isMaster }) {
 // ═══════════════════════════════════════════════════════════════════
 // SHARED HELPERS
 // ═══════════════════════════════════════════════════════════════════
+function ManualModal({ onClose }) {
+  const [open,setOpen] = useState("qr");
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:12}}>
+      <div style={{background:C.surface,borderRadius:20,width:"100%",maxWidth:560,maxHeight:"92vh",display:"flex",flexDirection:"column",border:`1px solid ${C.border}`,boxShadow:"0 24px 64px rgba(0,0,0,0.6)"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 18px",borderBottom:`1px solid ${C.border}`}}>
+          <h2 style={{fontFamily:"'Sora',sans-serif",fontSize:17,fontWeight:700}}>📖 使い方マニュアル</h2>
+          <button onClick={onClose} style={{padding:"6px 14px",background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,fontSize:13,color:C.muted}}>閉じる</button>
+        </div>
+        <div style={{overflowY:"auto",padding:14,display:"flex",flexDirection:"column",gap:8}}>
+          {MANUAL_SECTIONS.map(sec=>(
+            <div key={sec.id} style={{background:C.surface2,borderRadius:12,border:`1px solid ${open===sec.id?C.accentBorder:C.border}`,overflow:"hidden"}}>
+              <div onClick={()=>setOpen(open===sec.id?null:sec.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",cursor:"pointer"}}>
+                <span style={{fontSize:18}}>{sec.icon}</span>
+                <span style={{flex:1,fontSize:14,fontWeight:700}}>{sec.title}</span>
+                <span style={{color:C.muted,fontSize:12}}>{open===sec.id?"▲":"▼"}</span>
+              </div>
+              {open===sec.id&&(
+                <div style={{padding:"0 14px 14px",display:"flex",flexDirection:"column",gap:7}}>
+                  {sec.body.map((b,i)=>(
+                    b[0]==="h"
+                      ?<p key={i} style={{fontSize:13,fontWeight:700,color:C.accent,marginTop:i>0?6:0}}>{b[1]}</p>
+                      :b[0]==="n"
+                        ?<div key={i} style={{background:C.orangeDim,border:`1px solid ${C.orangeBorder}`,borderRadius:10,padding:"8px 12px"}}><p style={{fontSize:12,color:C.orange,lineHeight:1.6}}>{b[1]}</p></div>
+                        :<p key={i} style={{fontSize:13,color:C.text,lineHeight:1.7}}>{b[1]}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PermModal({ member, close, showToast }) {
   const [perms,  setPerms]  = useState({...resolvePerms(member)});
   const [preset, setPreset] = useState(member.permPreset||(member.permissions?"custom":"standard"));
