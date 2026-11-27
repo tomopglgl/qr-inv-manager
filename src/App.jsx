@@ -1,4 +1,4 @@
-// @version 9.5 - 2026-11-28
+// @version 9.6 - 2026-11-28
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -110,7 +110,7 @@ const MANUAL_SECTIONS = [
     ["s","商品カードにその商品の発送方法（ネコポスなど）が表示されます。"],
     ["n","「＋」や商品の追加・編集などは、マスターから権限をもらった人だけ表示されます。"],
   ]},
-  { id:"qr", icon:"📷", title:"QR発送の流れ（くわしい手順）", body:[
+  { id:"qr", icon:"📷", title:"QR発送の流れ", body:[
     ["h","全体の流れ"],
     ["s","①在庫を「－」で減らす → ②「QR発送」の「未読み込み」で商品を選ぶ → ③情報を入力 → ④QRコードを表示して読み込み → ⑤保存 → ⑥発送完了（マスター）→ ⑦取引完了"],
     ["h","① 売れた商品の在庫を減らす"],
@@ -2314,12 +2314,13 @@ function ManualModal({ onClose }) {
   const [open,setOpen] = useState("qr");
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:12}}>
-      <div style={{background:C.surface,borderRadius:20,width:"100%",maxWidth:560,maxHeight:"92vh",overflow:"hidden",display:"flex",flexDirection:"column",border:`1px solid ${C.border}`,boxShadow:"0 24px 64px rgba(0,0,0,0.6)"}}>
+      <div style={{background:C.surface,borderRadius:20,width:"100%",maxWidth:560,height:"90vh",overflow:"hidden",display:"flex",flexDirection:"column",border:`1px solid ${C.border}`,boxShadow:"0 24px 64px rgba(0,0,0,0.6)"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 18px",borderBottom:`1px solid ${C.border}`}}>
           <h2 style={{fontFamily:"'Sora',sans-serif",fontSize:17,fontWeight:700}}>📖 使い方マニュアル</h2>
           <button onClick={onClose} style={{padding:"6px 14px",background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,fontSize:13,color:C.muted}}>閉じる</button>
         </div>
-        <div style={{overflowY:"auto",minHeight:0,flex:1,padding:14,display:"flex",flexDirection:"column",gap:8}}>
+        <div style={{overflowY:"scroll",overscrollBehavior:"contain",WebkitOverflowScrolling:"touch",minHeight:0,flex:"1 1 0",padding:14}}>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
           {MANUAL_SECTIONS.map(sec=>(
             <div key={sec.id} style={{background:C.surface2,borderRadius:12,border:`1px solid ${open===sec.id?C.accentBorder:C.border}`,overflow:"hidden"}}>
               <div onClick={()=>setOpen(open===sec.id?null:sec.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",cursor:"pointer"}}>
@@ -2340,6 +2341,7 @@ function ManualModal({ onClose }) {
               )}
             </div>
           ))}
+          </div>
         </div>
       </div>
     </div>
