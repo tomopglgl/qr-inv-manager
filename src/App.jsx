@@ -1,4 +1,4 @@
-// @version 9.4 - 2026-11-28
+// @version 9.5 - 2026-11-28
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -110,30 +110,47 @@ const MANUAL_SECTIONS = [
     ["s","商品カードにその商品の発送方法（ネコポスなど）が表示されます。"],
     ["n","「＋」や商品の追加・編集などは、マスターから権限をもらった人だけ表示されます。"],
   ]},
-  { id:"qr", icon:"📷", title:"QR発送の流れ", body:[
+  { id:"qr", icon:"📷", title:"QR発送の流れ（くわしい手順）", body:[
     ["h","全体の流れ"],
-    ["s","① 在庫を「－」で減らす → ② 商品を選ぶ → ③ 情報を入力 → ④ QRを表示して読み込み → ⑤ 保存 → ⑥ 発送完了 → ⑦ 取引完了"],
-    ["h","① 在庫を減らす"],
-    ["s","「在庫管理」で、売れた商品の「－」を押します。"],
-    ["h","② 商品を選ぶ（QR発送 →「未読み込み」）"],
-    ["s","「商品を選択してください」から売れた商品を選びます。"],
-    ["s","商品名の横に「QR残り○枚／選択可能○回」が出ます。「－」で減らした数だけ選べます。"],
-    ["s","選ぶと、その商品のカテゴリの「一番古く登録されたQR」が自動で割り当てられ、登録画面が開きます。"],
-    ["n","割り当てられたQRはあなた専用です。他の人と重なりません。シールは、登録された古い順に探してください。"],
-    ["h","③ 情報を入力"],
-    ["s","「売れた商品の画像」を追加します（必須。画像がないとQRを表示できません）。"],
-    ["s","商品名・売れた年月日時・個数・金額・カテゴリを入力します。選んだ商品の情報は先に入っています。"],
-    ["h","④ QRコードを表示して読み込み"],
-    ["s","「🔍 QRコードを表示」を押すとQRが出ます。タップで拡大できます。"],
-    ["s","読み込みが終わったら「読み込みチェック完了」にチェックを入れます。"],
-    ["h","⑤ 保存"],
-    ["s","「💾 保存して完了」を押します。Excel（CSV）が自動でダウンロードされ、「読み込み済」タブに移ります。"],
-    ["h","⑥ 発送完了（マスターが操作）"],
-    ["s","マスターが発送すると「発送完了」タブに移り、通知が届きます。"],
-    ["h","⑦ 取引完了（あなたが操作）"],
-    ["s","取引が終わったら、「発送完了」タブで該当の商品の「🎉 取引完了」を押します。「取引完了」タブに移ります。"],
-    ["n","途中で戻る時は「← 戻る」を押します。割り当てたQRは解除され、選択した回数も戻ります。"],
-    ["n","途中で画面を閉じた時は、「未読み込み」タブの上に「選択中」と出るので、「再開」で続けられます。"],
+    ["s","①在庫を「－」で減らす → ②「QR発送」の「未読み込み」で商品を選ぶ → ③情報を入力 → ④QRコードを表示して読み込み → ⑤保存 → ⑥発送完了（マスター）→ ⑦取引完了"],
+    ["h","① 売れた商品の在庫を減らす"],
+    ["s","1. 画面の左上にある「🗃 在庫管理」を押します。"],
+    ["s","2. 一覧から、売れた商品のカードを探します（上の検索欄に商品名を入れると探しやすいです）。"],
+    ["s","3. そのカードの左下にある「－」ボタンを、売れた数だけ押します。1回押すごとに在庫が1つ減ります。"],
+    ["n","⚠️ 「－」を押した数だけ、あとでQRを選べます。売れた数ぶん必ず押してください。"],
+    ["h","② QRコードを選ぶ（商品を選ぶ）"],
+    ["s","1. 画面の左上にある「📷 QR発送」を押します。"],
+    ["s","2. その下に並んでいる項目から「未読み込み」を押します。"],
+    ["s","3. 一番上の「🏷 商品を選ぶ」の選択欄を押し、①で「－」を押した商品を選びます。"],
+    ["s","4. 商品名の横に「QR残り○枚／選択可能○回」と出ます。選択可能は、「－」で減らした数から、すでにQRを選んだ数を引いた回数です。"],
+    ["s","5. 商品を選ぶと、自動でそのカテゴリのQRが1枚あなた専用になり、「情報入力」の画面が開きます。"],
+    ["n","QRは古く登録された順に割り当てられ、他の人と重なりません。QRのシールも、同じ順番（古い順）で探してください。"],
+    ["n","選択可能が「0回」の商品はグレーになって選べません。もう一度「－」を押していないか確認してください。"],
+    ["h","③ 情報を入力する"],
+    ["s","1. 「売れた商品の画像」の枠を押して、画像を追加します（必須です。画像がないとQRコードを表示できません）。"],
+    ["s","2. 「商品名」：選んだ商品の名前が最初から入っています。"],
+    ["s","3. 「売れた年月日時」：商品が売れた日時を入力します。"],
+    ["s","4. 「個数」：売れた個数を入力します（最初は1が入っています）。"],
+    ["s","5. 「金額（円）」：売れた金額を入力します。"],
+    ["s","6. 「カテゴリ」：商品のカテゴリを選びます（最初から入っている場合は、そのままで大丈夫です）。"],
+    ["h","④ QRコードを表示して読み込む"],
+    ["s","1. すべて入力すると「🔍 QRコードを表示」が押せるようになります。押すとQRコードが出ます。"],
+    ["s","2. QRコードを押すと拡大できます。拡大した画面を、読み取りの機械やスマホで読み込みます。"],
+    ["s","3. 読み込みが終わったら、「読み込みチェック完了」の四角を押してチェックを入れます。"],
+    ["h","⑤ 保存する"],
+    ["s","1. 画面の一番下の「💾 保存して完了」を押します。"],
+    ["s","2. Excel（CSV）のファイルが自動でダウンロードされます。"],
+    ["s","3. 保存した商品は「読み込み済」の項目に移ります。"],
+    ["h","⑥ 発送完了（マスターが操作します）"],
+    ["s","マスターが荷物を発送すると、あなたの「発送完了」の項目に移り、通知が届きます。"],
+    ["h","⑦ 取引完了（あなたが操作します）"],
+    ["s","1. 「QR発送」の「発送完了」の項目を開きます。"],
+    ["s","2. 取引が終わった商品の「🎉 取引完了」ボタンを押します。"],
+    ["s","3. その商品が「取引完了」の項目に移って、完了です。"],
+    ["h","途中でやめたい時・間違えた時"],
+    ["s","情報入力の画面で「← 戻る」を押すと、そのQRは解除され、選んだ回数も元に戻ります。"],
+    ["s","途中で画面を閉じてしまった時は、「未読み込み」の項目の上に「選択中」のQRが出ます。「再開」を押すと続きから入力できます。"],
+    ["s","読み込み済にした後の間違いは、マスターに伝えてください。マスターが「未読み込み」に戻せます。"],
   ]},
   { id:"reg", icon:"📦", title:"QRを自分で登録する", body:[
     ["h","登録できる発送方法"],
@@ -2297,12 +2314,12 @@ function ManualModal({ onClose }) {
   const [open,setOpen] = useState("qr");
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:12}}>
-      <div style={{background:C.surface,borderRadius:20,width:"100%",maxWidth:560,maxHeight:"92vh",display:"flex",flexDirection:"column",border:`1px solid ${C.border}`,boxShadow:"0 24px 64px rgba(0,0,0,0.6)"}}>
+      <div style={{background:C.surface,borderRadius:20,width:"100%",maxWidth:560,maxHeight:"92vh",overflow:"hidden",display:"flex",flexDirection:"column",border:`1px solid ${C.border}`,boxShadow:"0 24px 64px rgba(0,0,0,0.6)"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 18px",borderBottom:`1px solid ${C.border}`}}>
           <h2 style={{fontFamily:"'Sora',sans-serif",fontSize:17,fontWeight:700}}>📖 使い方マニュアル</h2>
           <button onClick={onClose} style={{padding:"6px 14px",background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,fontSize:13,color:C.muted}}>閉じる</button>
         </div>
-        <div style={{overflowY:"auto",padding:14,display:"flex",flexDirection:"column",gap:8}}>
+        <div style={{overflowY:"auto",minHeight:0,flex:1,padding:14,display:"flex",flexDirection:"column",gap:8}}>
           {MANUAL_SECTIONS.map(sec=>(
             <div key={sec.id} style={{background:C.surface2,borderRadius:12,border:`1px solid ${open===sec.id?C.accentBorder:C.border}`,overflow:"hidden"}}>
               <div onClick={()=>setOpen(open===sec.id?null:sec.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",cursor:"pointer"}}>
@@ -2386,7 +2403,7 @@ function AutoPickPanel({ invItems, getCandidates, remainingFor, onPick }) {
   }
   return (
     <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.accentBorder}`,padding:16,marginBottom:14}}>
-      <p style={{fontSize:13,fontWeight:700,marginBottom:4}}>🏷 商品を選ぶ（そのカテゴリの一番古いQRを表示）</p>
+      <p style={{fontSize:13,fontWeight:700,marginBottom:4}}>🏷 商品を選ぶ</p>
       <p style={{fontSize:11,color:C.muted,marginBottom:10}}>在庫を「－」した数だけ選べます（選ぶたびに1回消費）。選ぶと登録画面が開き、他の人と重ならないQRがあなた専用になります。</p>
       <select value="" disabled={busy} onChange={e=>choose(e.target.value)} style={inputS}>
         <option value="">{busy?"QRを確保中...":"商品を選択してください"}</option>
