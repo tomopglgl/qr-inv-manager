@@ -1,4 +1,4 @@
-// @version 9.6 - 2026-11-28
+// @version 9.7 - 2026-11-28
 import { useState, useEffect, useRef, useCallback } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
@@ -456,27 +456,27 @@ export default function App() {
       )}
 
       {/* ── Header ── */}
-      <header style={{background:`${C.surface}f0`,backdropFilter:"blur(12px)",borderBottom:`1px solid ${C.border}`,padding:"0 16px",height:54,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:50}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <div style={{display:"flex",gap:2,background:C.surface2,borderRadius:10,padding:3,border:`1px solid ${C.border}`}}>
+      <header style={{background:`${C.surface}f0`,backdropFilter:"blur(12px)",borderBottom:`1px solid ${C.border}`,padding:"8px 12px",minHeight:54,display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:50}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flex:"1 1 260px",minWidth:0}}>
+          <div style={{display:"flex",gap:2,background:C.surface2,borderRadius:10,padding:3,border:`1px solid ${C.border}`,width:"100%"}}>
             {[{id:"inventory",icon:"🗃",label:"在庫管理"},{id:"qr",icon:"📷",label:"QR発送"},{id:"sales",icon:"💰",label:"売上"}].map(m=>(
-              <button key={m.id} onClick={()=>setAppMode(m.id)} style={{padding:"5px 12px",borderRadius:7,border:"none",background:appMode===m.id?C.accent:"transparent",color:appMode===m.id?"#fff":C.muted,fontSize:12,fontWeight:appMode===m.id?700:400,display:"flex",alignItems:"center",gap:5,transition:"all 0.15s"}}>
+              <button key={m.id} onClick={()=>setAppMode(m.id)} style={{flex:1,padding:"7px 6px",borderRadius:7,border:"none",background:appMode===m.id?C.accent:"transparent",color:appMode===m.id?"#fff":C.muted,fontSize:12,fontWeight:appMode===m.id?700:400,display:"flex",alignItems:"center",justifyContent:"center",gap:4,whiteSpace:"nowrap",transition:"all 0.15s"}}>
                 <span>{m.icon}</span><span>{m.label}</span>
               </button>
             ))}
           </div>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <button onClick={()=>setShowManual(true)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 10px",fontSize:12,color:C.muted}}>📖 使い方</button>
-          <button onClick={()=>{setShowBell(v=>!v);if(!showBell)markAllRead();}} style={{position:"relative",background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 10px",fontSize:15,color:C.muted}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,flex:"1 1 260px",justifyContent:"flex-end",flexWrap:"wrap"}}>
+          <button onClick={()=>setShowManual(true)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 10px",fontSize:12,color:C.muted,whiteSpace:"nowrap"}}>📖 使い方</button>
+          <button onClick={()=>{setShowBell(v=>!v);if(!showBell)markAllRead();}} style={{position:"relative",background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 10px",fontSize:15,color:C.muted,whiteSpace:"nowrap"}}>
             🔔
             {unreadCount>0&&<span style={{position:"absolute",top:-6,right:-6,background:C.red,color:"#fff",fontSize:9,fontWeight:700,width:17,height:17,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",animation:"pulse 1.5s infinite"}}>{unreadCount>9?"9+":unreadCount}</span>}
           </button>
-          <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:20,background:isMaster?C.purpleDim:C.accentDim,color:isMaster?C.purple:C.accent,border:`1px solid ${isMaster?C.purpleBorder:C.accentBorder}`}}>
+          <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:20,background:isMaster?C.purpleDim:C.accentDim,color:isMaster?C.purple:C.accent,border:`1px solid ${isMaster?C.purpleBorder:C.accentBorder}`,whiteSpace:"nowrap"}}>
             {isMaster?"👑 MASTER":"MEMBER"}
           </span>
-          <span style={{fontSize:12,color:C.muted}}>{user.name}</span>
-          <button onClick={()=>setUser(null)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 10px",fontSize:12,color:C.muted}}>ログアウト</button>
+          <span style={{fontSize:12,color:C.muted,whiteSpace:"nowrap"}}>{user.name}</span>
+          <button onClick={()=>setUser(null)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 10px",fontSize:12,color:C.muted,whiteSpace:"nowrap"}}>ログアウト</button>
         </div>
       </header>
 
@@ -1210,7 +1210,7 @@ function QRApp({ qrItems, qrLog, members, user, isMaster: isMasterRole, can, sho
       )}
       <div style={{display:"flex",gap:2,marginBottom:14,background:C.surface,borderRadius:12,padding:4,border:`1px solid ${C.border}`,flexWrap:"wrap"}}>
         {tabs.map(t=>(
-          <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:"8px 6px",borderRadius:8,border:"none",minWidth:80,background:tab===t.id?C.surface2:"transparent",color:tab===t.id?C.text:C.muted,fontSize:12,fontWeight:tab===t.id?700:400,display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:"1 1 auto",padding:"8px 10px",borderRadius:8,border:"none",background:tab===t.id?C.surface2:"transparent",color:tab===t.id?C.text:C.muted,fontSize:12,fontWeight:tab===t.id?700:400,display:"flex",alignItems:"center",justifyContent:"center",gap:5,whiteSpace:"nowrap"}}>
             {t.label}
             {t.cnt!==null&&<span style={{background:tab===t.id?C.accent:C.surface2,color:tab===t.id?"#fff":C.muted,fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:20,border:`1px solid ${C.border}`}}>{t.cnt}</span>}
           </button>
